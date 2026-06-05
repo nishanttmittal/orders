@@ -55,3 +55,10 @@ Respond like an experienced manufacturing founder, factory operator, and CTO. Be
 - **Deploy:** GitHub Pages per repo (base `/<repo>/`), `npm run deploy`. Admin password `6133923_N`.
 - Live apps: Fitting (`/fitting/`), Welder Contractor (`/welder/`), Plating Job Work. Value-chain mapping per the workflow above.
 - See the assistant's memory (`unico-mes-vision`, `project-apps`, `fitting-live-data`) for full per-app detail and the pending roadmap.
+
+## Security Rules (apps will be used by multiple workers & contractors)
+Always prioritize, in order: 1) Authentication 2) Role-based access 3) Firebase security rules 4) Audit logs 5) Secure API handling 6) No secrets in frontend 7) Backup & recovery 8) Minimal permissions.
+- **Never expose real secrets** (server keys, tokens). Design assuming workers may accidentally OR intentionally misuse access. **Sensitive actions require approval.** Keep security practical, simple, scalable — phased, not over-engineered early.
+- **Reality check (don't confuse these):** Firebase WEB config `apiKey` is meant to ship in the client — it is NOT a secret; protection comes from **Firestore Rules + Auth**, not hiding it. The real secrets to never commit/expose: GitHub tokens, service-account/admin keys, any server credentials.
+- **Current posture (small trusted team):** anonymous sign-in + UI passwords (in frontend) + rules = "any signed-in user can read/write that app's data." Fine for ~5 trusted people. **Blind spot:** UI passwords are readable in the JS bundle and rules don't enforce roles server-side — so this is NOT safe once external contractors with conflicting interests get access.
+- **Phase-up trigger (do BEFORE multiple external contractors use it):** real per-user login (Google/phone/email, no shared password), Firestore rules that enforce **role/UID** (not just "signed in"), remove passwords from frontend, least-privilege per collection, approval-gated sensitive writes. Until then, limit who has links and rotate any leaked token immediately.
