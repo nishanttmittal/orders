@@ -62,3 +62,46 @@ Always prioritize, in order: 1) Authentication 2) Role-based access 3) Firebase 
 - **Reality check (don't confuse these):** Firebase WEB config `apiKey` is meant to ship in the client — it is NOT a secret; protection comes from **Firestore Rules + Auth**, not hiding it. The real secrets to never commit/expose: GitHub tokens, service-account/admin keys, any server credentials.
 - **Current posture (small trusted team):** anonymous sign-in + UI passwords (in frontend) + rules = "any signed-in user can read/write that app's data." Fine for ~5 trusted people. **Blind spot:** UI passwords are readable in the JS bundle and rules don't enforce roles server-side — so this is NOT safe once external contractors with conflicting interests get access.
 - **Phase-up trigger (do BEFORE multiple external contractors use it):** real per-user login (Google/phone/email, no shared password), Firestore rules that enforce **role/UID** (not just "signed in"), remove passwords from frontend, least-privilege per collection, approval-gated sensitive writes. Until then, limit who has links and rotate any leaked token immediately.
+
+## Security + Reliability + Architecture Rules (full governance — target standard)
+Future users: Owners · Managers · Factory workers · Contractors · Purchase · Dispatch · QC. Design for mistakes, misuse, unauthorized access, scaling. Core priority: Security · Simplicity · Reliability · Data integrity · Ease of use · Auditability · Scalability · Backup/recovery. Never trade reliability for needless complexity.
+
+**Authentication:** All apps REQUIRE login; never anonymous in production. Owner/Admin = strong password + email + 2FA. Staff = simple login, mobile OTP or PIN. Contractors = limited temporary access, restricted modules only. Sessions auto-expire; auto-logout on inactivity.
+
+**Role-based access (mandatory, least-privilege):**
+- Owner: everything.
+- Factory Manager: Production, Inventory, Dispatch, Dashboard; CANNOT delete historical records.
+- Production Supervisor: production entry only; cannot modify stock or see financials.
+- Welding Contractor: welding module only; can mark sent/received; cannot view inventory/finance.
+- Dispatch Staff: dispatch module only; cannot edit production history.
+- Purchase Team: purchase entries + vendor management; cannot modify production.
+
+**API key security:** No secrets in frontend. Forbidden: hardcoded API keys (non-Firebase), tokens in browser code, secrets in repo. Use `.env` (FIREBASE_*, OPENAI_*, WHATSAPP_*); `.gitignore` `.env`/`serviceAccount.json`/secret configs. Secrets only via backend/Cloud Functions; frontend never calls sensitive APIs directly. (Note: Firebase web apiKey is public-by-design, not a secret.)
+
+**Firebase rules (critical):** NEVER `allow read, write: if true`. Every collection access protected by Auth + role checks + ownership checks + validation. Workers access only assigned data; admins elevated. Sensitive tables (Inventory, Financials, Dispatch, Production logs) get stronger rules.
+
+**Audit logs (mandatory):** log User · Timestamp · Device · Old value · New value · Module · Reason. Required for: stock adjustment, dispatch edits, production edits, qty changes, QC override, deletion, contractor settlement. Never allow silent edits.
+
+**Approval workflow:** admin approval required for: deleting records, stock corrections, production backdating, dispatch modification, finished-qty edits, payment approvals, contractor settlements. Workers never overwrite historical data directly.
+
+**Data validation (never trust input):** qty ≥ 0; production ≤ sent qty; dispatch ≤ stock; prevent duplicates; validate dates; flag anomalies (e.g. 1000 vs 100).
+
+**Inventory protection:** stock never negative; changes only via Purchase/Production-issue/Consumption/Rejection/Return/Adjustment-approval; every movement traceable. Support opening, inward, outward, balance, reserved, dead stock.
+
+**Production integrity:** track Planned/Sent/Produced/Rejected/Rework/Pending; department stages AUTO-UPDATE (laser complete → welding pending); no manual duplicate entry.
+
+**Backup (critical):** automatic backups mandatory — min daily night snapshot; preferred real-time cloud sync + daily snapshot; include production/inventory/orders/dispatch/user-activity/settings; must support restore.
+
+**Hacker protection:** prevent unauthorized access, API theft, NoSQL injection, spam, brute-force, token leaks. Add rate limiting, session timeout, device tracking, login alerts; block repeated failed logins.
+
+**Mobile/Offline/Errors:** Android, poor-internet tolerant, auto-sync; hide admin controls on worker screens; offline local entry + auto-sync on reconnect WITHOUT duplicate syncs; confirmation popups before delete/edit-historical/dispatch/stock-adjustment ("Are you sure? This affects inventory.").
+
+**Notifications:** alert owner/admin on major stock change, large rejection, production/dispatch delay, low inventory, failed sync, suspicious activity.
+
+**Performance:** fast load, low-end phones, minimal clicks/typing; prefer dropdowns, photos, barcode/QR, voice; avoid complicated forms.
+
+**Architecture:** modular, decoupled (Orders/Production/Welding/Plating/Powder/Assembly/Inventory/QC/Dispatch/Dashboard); a change in one module must not break others; maintain backward compatibility.
+
+**Development:** understand process → ask questions → suggest architecture → identify blind spots → explain tradeoffs → then implement. Never rush to code. Think long-term, like a factory CTO + security architect. Practical reliability over fancy features.
+
+> STATUS NOTE: this is the TARGET standard. Today's apps meet many (audit logs, role UI split, offline sync, confirmation popups, void-not-delete, data validation, modular reusable framework) but NOT yet: real per-user auth/2FA/OTP/PIN, server-enforced role rules, secrets-via-backend, automatic scheduled backup, rate-limiting/login-alerts. These land in the dedicated "Security Phase" before external contractors get access (phased, not retrofitted early).
