@@ -3,9 +3,12 @@
  */
 export const APP_TITLE = 'UNICO Orders'
 
-/** Owner (you) — full access incl. price/advance + financial dashboard. */
+/** Bootstrap owner(s) — always have full access, even before any user is added.
+ *  Everyone else signs in with Google and is granted a role in Admin → Users. */
+export const OWNER_EMAILS = ['nspenterprises24@gmail.com']
+
+/** Legacy password gate (kept only as reference; app now uses Google login). */
 export const ADMIN_PASSWORD = '6133923_N'
-/** Production manager — orders + status, NO money. Change anytime in admin. */
 export const MANAGER_PASSWORD = 'nsp@123'
 
 /** Finishes available per order line (per-product). */

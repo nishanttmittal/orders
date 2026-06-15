@@ -25,7 +25,10 @@ export function LocalOrdersProvider({ children }) {
   const log = useCallback((action, detail, by = 'user', ref = '') => {
     logs.insert({ ts: new Date().toISOString(), action, detail, by, ref })
   }, [logs])
-  const value = { orders, clients, products, logs, lastUsed: lastUsedStore, log, cloud: { connected: false, error: '' } }
+  // WhatsApp inbox + users are cloud-only; stub them for local mode.
+  const inbox = { list: [], insert: () => {}, update: () => {}, remove: () => {} }
+  const users = { list: [], insert: () => {}, update: () => {}, remove: () => {} }
+  const value = { orders, clients, products, logs, inbox, users, lastUsed: lastUsedStore, log, cloud: { connected: false, error: '' } }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 

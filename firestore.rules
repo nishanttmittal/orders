@@ -17,8 +17,17 @@ service cloud.firestore {
     match /apps/welder/{collection}/{docId} { allow read, write: if request.auth != null; }
     match /apps/welder { allow read, write: if request.auth != null; }
 
-    match /apps/orders/{collection}/{docId} { allow read, write: if request.auth != null; }
-    match /apps/orders { allow read, write: if request.auth != null; }
+    // Orders is ALLOWLIST-LOCKED (Google users added in Admin → Users).
+    // Canonical/deployed ruleset: attendance-app/firestore.rules (deployed via
+    // attendance-app/jobs/deployRules.js). This file is a stale reference only.
+    function ordEmail() { return request.auth != null ? request.auth.token.get('email', '') : ''; }
+    function ordBootstrap() { return ordEmail() == 'nspenterprises24@gmail.com'; }
+    function ordPath() { return /databases/$(database)/documents/apps/orders/users/$(ordEmail()); }
+    function ordUser() { return request.auth != null && (ordBootstrap() || (ordEmail() != '' && exists(ordPath()) && get(ordPath()).data.active == true)); }
+    function ordOwner() { return request.auth != null && (ordBootstrap() || (ordEmail() != '' && exists(ordPath()) && get(ordPath()).data.active == true && get(ordPath()).data.role == 'owner')); }
+    match /apps/orders/users/{id} { allow read: if request.auth != null; allow write: if ordOwner(); }
+    match /apps/orders/{collection}/{docId} { allow read, write: if ordUser() && collection != 'users'; }
+    match /apps/orders { allow read, write: if ordUser(); }
 
     match /{document=**} { allow read, write: if false; }
   }

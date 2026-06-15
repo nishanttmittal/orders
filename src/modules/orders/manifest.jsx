@@ -10,6 +10,7 @@ import NewOrder from './pages/NewOrder'
 import Orders from './pages/Orders'
 import Dashboard from './pages/Dashboard'
 import Admin from './pages/Admin'
+import WhatsAppInbox from './pages/WhatsAppInbox'
 
 function HomeStats() {
   const { orders } = useOrders()
@@ -27,10 +28,12 @@ export const ordersModule = {
   HomeStats,
   adminPassword: ADMIN_PASSWORD,
   managerPassword: MANAGER_PASSWORD,
+  // roles: which signed-in roles see each page. employee = entry only.
   pages: [
-    { key: 'newOrder',  title: 'New Order',  desc: 'Enter a client order',     icon: '➕', color: 'from-blue-600 to-blue-700',     Component: NewOrder },
-    { key: 'orders',    title: 'Order Book', desc: 'All orders, status & due',  icon: '📋', color: 'from-indigo-600 to-indigo-700', Component: Orders },
-    { key: 'dashboard', title: 'Dashboard',  desc: 'Money & delivery view',     icon: '📊', color: 'from-emerald-600 to-emerald-700', ownerOnly: true, Component: Dashboard },
-    { key: 'admin',     title: 'Admin',      desc: 'Products, clients, backup', icon: '⚙️', color: 'from-slate-600 to-slate-700',   ownerOnly: true, Component: Admin },
+    { key: 'newOrder',  title: 'New Order',  desc: 'Enter a client order',     icon: '➕', color: 'from-blue-600 to-blue-700',     roles: ['employee', 'manager', 'owner'], Component: NewOrder },
+    { key: 'orders',    title: 'Order Book', desc: 'All orders, status & due',  icon: '📋', color: 'from-indigo-600 to-indigo-700', roles: ['employee', 'manager', 'owner'], Component: Orders },
+    { key: 'whatsapp',  title: 'WhatsApp Inbox', desc: 'Review AI orders from WhatsApp', icon: '📥', color: 'from-green-600 to-green-700', roles: ['manager', 'owner'], Component: WhatsAppInbox },
+    { key: 'dashboard', title: 'Dashboard',  desc: 'Money & delivery view',     icon: '📊', color: 'from-emerald-600 to-emerald-700', roles: ['owner'], Component: Dashboard },
+    { key: 'admin',     title: 'Admin',      desc: 'Products, clients, backup, users', icon: '⚙️', color: 'from-slate-600 to-slate-700', roles: ['owner'], Component: Admin },
   ],
 }

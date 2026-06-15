@@ -43,6 +43,28 @@ export const paths = {
   product: (id) => cdoc('products', id),
   logs: () => coll('logs'),
   logDoc: (id) => cdoc('logs', id),
+  // AI-extracted order suggestions from the WhatsApp bridge (review queue).
+  inbox: () => coll('whatsapp_inbox'),
+  inboxDoc: (id) => cdoc('whatsapp_inbox', id),
+  // Users & Access allowlist (Google email -> role). Read by any signed-in
+  // device to resolve role; written by owner only (see Firestore rules).
+  users: () => coll('users'),
+  user: (id) => cdoc('users', id),
+}
+
+// ── Main-session Google auth (so Firestore rules see the email + role) ───────
+export async function signInWithGoogle() {
+  if (!auth) throw new Error('Cloud not configured')
+  const provider = new GoogleAuthProvider()
+  provider.setCustomParameters({ prompt: 'select_account' })
+  await signInWithPopup(auth, provider)
+}
+export function signOutUser() {
+  if (auth) auth.signOut().catch(() => {})
+}
+export function watchAuth(cb) {
+  if (!auth) { cb(null); return () => {} }
+  return onAuthStateChanged(auth, cb)
 }
 
 export function ensureSignedIn() {
