@@ -83,7 +83,9 @@ export default function AuthGate({ title = 'UNICO Orders', icon = '📋', childr
   }
   return (
     <Screen>
-      <div className="text-5xl mb-3">{icon}</div>
+      <div className="w-20 h-20 bg-white rounded-2xl flex items-center justify-center p-2.5 mb-4 shadow-xl">
+        <img src={`${import.meta.env.BASE_URL}unico-logo.png`} alt="UNICO" className="max-w-full max-h-full object-contain" />
+      </div>
       <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
       <p className="text-slate-400 text-sm mt-1 mb-8">Sign in to continue</p>
       <button

@@ -8,7 +8,8 @@ import { Button, Card, FieldLabel, SearchBar, NumberInput, useToast, Toast } fro
 import { fmtDate, fmtNum } from '../../../core/utils/format'
 import { useOrders } from '../OrdersContext'
 import { STATUSES, statusMeta } from '../config'
-import { itemsQty, balance, daysToDue, isOverdue, dueSoon } from '../logic/orders'
+import { itemsQty, balance, daysToDue, isOverdue, dueSoon, isOpen } from '../logic/orders'
+import { duplicateOrderNos } from '../orderNo'
 
 export default function Orders({ owner = false }) {
   const { orders, log } = useOrders()
@@ -20,7 +21,7 @@ export default function Orders({ owner = false }) {
   const list = useMemo(() => {
     const term = q.trim().toLowerCase()
     return [...orders.list]
-      .filter(o => filter === 'all' ? true : filter === 'open' ? o.status !== 'dispatched' : o.status === filter)
+      .filter(o => filter === 'all' ? true : filter === 'open' ? isOpen(o) : o.status === filter)
       .filter(o => !term || (o.clientName || '').toLowerCase().includes(term) || (o.orderNo || '').toLowerCase().includes(term))
       .sort((a, b) => {
         const da = a.deliveryDate || '9999', db = b.deliveryDate || '9999'
@@ -30,6 +31,7 @@ export default function Orders({ owner = false }) {
 
   const overdue = orders.list.filter(isOverdue)
   const soon = orders.list.filter(o => dueSoon(o, 3))
+  const dupNos = useMemo(() => duplicateOrderNos(orders.list), [orders.list])
 
   const setStatus = (o, status) => {
     orders.update(o.id, { status })
@@ -37,7 +39,15 @@ export default function Orders({ owner = false }) {
     show(`${o.orderNo} → ${statusMeta(status).label}`)
   }
   const setMoney = (o, patch) => orders.update(o.id, patch)
-  const del = (o) => { if (confirm(`Delete order ${o.orderNo} (${o.clientName})?`)) { orders.remove(o.id); log('DELETE_ORDER', `${o.orderNo} · ${o.clientName}`, 'owner', o.id); show('Deleted ✓') } }
+  // Cancel (not hard delete): keep the record + number permanently, mark cancelled.
+  const cancelOrder = (o) => {
+    if (o.status === 'cancelled') return
+    const reason = prompt(`Cancel order ${o.orderNo} (${o.clientName})?\nThe order is kept and its number is never reused. Reason (optional):`)
+    if (reason === null) return  // owner dismissed the prompt
+    orders.update(o.id, { status: 'cancelled', cancelledAt: new Date().toISOString(), cancelledBy: 'owner', cancelReason: (reason || '').trim() })
+    log('CANCEL_ORDER', `${o.orderNo} · ${o.clientName}${reason ? ' · ' + reason : ''}`, 'owner', o.id)
+    show('Order cancelled ✓')
+  }
 
   const FilterChip = ({ k, label }) => (
     <button onClick={() => setFilter(k)} className={`px-3 py-1.5 rounded-xl text-sm font-bold whitespace-nowrap ${filter === k ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>{label}</button>
@@ -57,10 +67,17 @@ export default function Orders({ owner = false }) {
         </Card>
       )}
 
+      {dupNos.size > 0 && (
+        <Card className="p-4 border border-rose-300 bg-rose-50">
+          <FieldLabel className="text-rose-700">⚠ Duplicate order numbers</FieldLabel>
+          <div className="mt-1 text-sm font-semibold text-rose-700">{[...dupNos].join(', ')} — used on more than one order. Open each and cancel or re-number one.</div>
+        </Card>
+      )}
+
       <SearchBar value={q} onChange={setQ} placeholder="Search client or order no…" />
       <div className="flex gap-2 overflow-x-auto pb-1">
         <FilterChip k="open" label="Open" /><FilterChip k="pending" label="Pending" /><FilterChip k="production" label="In Production" />
-        <FilterChip k="ready" label="Ready" /><FilterChip k="dispatched" label="Dispatched" /><FilterChip k="all" label="All" />
+        <FilterChip k="ready" label="Ready" /><FilterChip k="dispatched" label="Dispatched" /><FilterChip k="cancelled" label="Cancelled" /><FilterChip k="all" label="All" />
       </div>
 
       {list.length === 0 ? (
@@ -73,7 +90,7 @@ export default function Orders({ owner = false }) {
               <Card key={o.id} className="p-4">
                 <div className="flex items-start justify-between cursor-pointer" onClick={() => setOpenId(open ? null : o.id)}>
                   <div>
-                    <div className="font-bold text-slate-800">{o.clientName} <span className="text-xs text-slate-400 font-normal">{o.orderNo}</span></div>
+                    <div className="font-bold text-slate-800">{o.clientName} <span className="text-xs text-slate-400 font-normal">{o.orderNo}</span>{dupNos.has((o.orderNo || '').trim()) && <span className="ml-1 text-[10px] font-bold text-red-700 bg-red-100 rounded px-1 py-0.5 align-middle">⚠ DUP #</span>}</div>
                     <div className="text-xs text-slate-500 mt-0.5">{itemsQty(o)} pcs · {(o.items || []).length} item(s){o.deliveryDate ? ` · due ${fmtDate(o.deliveryDate)}` : ''}</div>
                     {isOverdue(o) && <div className="text-xs font-bold text-red-600 mt-0.5">OVERDUE by {Math.abs(d)}d</div>}
                   </div>
@@ -89,14 +106,16 @@ export default function Orders({ owner = false }) {
                     </div>
                     {(o.transport || o.remarks) && <div className="text-xs text-slate-400">{o.transport ? `🚚 ${o.transport}` : ''}{o.transport && o.remarks ? ' · ' : ''}{o.remarks}</div>}
 
-                    <div>
-                      <FieldLabel>Status</FieldLabel>
-                      <div className="mt-1.5 grid grid-cols-4 gap-1.5">
-                        {STATUSES.map(s => (
-                          <button key={s.key} onClick={() => setStatus(o, s.key)} className={`py-2 rounded-lg text-[11px] font-bold ${o.status === s.key ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>{s.label}</button>
-                        ))}
+                    {o.status !== 'cancelled' && (
+                      <div>
+                        <FieldLabel>Status</FieldLabel>
+                        <div className="mt-1.5 grid grid-cols-4 gap-1.5">
+                          {STATUSES.map(s => (
+                            <button key={s.key} onClick={() => setStatus(o, s.key)} className={`py-2 rounded-lg text-[11px] font-bold ${o.status === s.key ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>{s.label}</button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
+                    )}
 
                     {owner && (
                       <div className="grid grid-cols-2 gap-2 bg-emerald-50 rounded-xl p-3">
@@ -105,7 +124,9 @@ export default function Orders({ owner = false }) {
                         <div className="col-span-2 text-sm font-bold text-emerald-700">Balance: ₹{fmtNum(balance(o))}</div>
                       </div>
                     )}
-                    {owner && <Button size="sm" variant="danger" className="w-full" onClick={() => del(o)}>Delete Order</Button>}
+                    {o.status === 'cancelled'
+                      ? <div className="text-xs font-semibold text-rose-600 text-center">Cancelled{o.cancelReason ? ` · ${o.cancelReason}` : ''}{o.cancelledAt ? ` · ${fmtDate(o.cancelledAt)}` : ''}</div>
+                      : owner && <Button size="sm" variant="danger" className="w-full" onClick={() => cancelOrder(o)}>Cancel Order</Button>}
                   </div>
                 )}
               </Card>

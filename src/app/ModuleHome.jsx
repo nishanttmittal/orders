@@ -12,7 +12,9 @@ export default function ModuleHome({ module, onOpen }) {
       <div className="bg-gradient-to-r from-slate-800 to-slate-900 text-white px-6 py-8">
         <div className="max-w-lg mx-auto">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center text-xl">{icon}</div>
+            <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center p-1.5 shadow-sm">
+              <img src={`${import.meta.env.BASE_URL}unico-logo.png`} alt="UNICO" className="max-w-full max-h-full object-contain" />
+            </div>
             <div>
               <h1 className="text-xl font-bold tracking-tight">{title}</h1>
               <p className="text-slate-400 text-xs mt-0.5">{today}</p>

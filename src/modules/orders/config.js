@@ -21,7 +21,10 @@ export const STATUSES = [
   { key: 'ready',      label: 'Ready',         color: 'bg-blue-100 text-blue-700' },
   { key: 'dispatched', label: 'Dispatched',    color: 'bg-emerald-100 text-emerald-700' },
 ]
-export const statusMeta = (k) => STATUSES.find(s => s.key === k) || STATUSES[0]
+/** Terminal state — set only via owner Cancel, not a normal lifecycle stage,
+ *  so it stays out of the STATUSES buttons but still renders a proper pill. */
+export const CANCELLED_META = { key: 'cancelled', label: 'Cancelled', color: 'bg-rose-100 text-rose-700' }
+export const statusMeta = (k) => (k === 'cancelled' ? CANCELLED_META : STATUSES.find(s => s.key === k) || STATUSES[0])
 
 /** Product master (UNICO metal furniture; editable in admin). */
 export const DEFAULT_PRODUCTS = [

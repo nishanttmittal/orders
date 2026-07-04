@@ -9,7 +9,10 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "predeploy": "npm run build",
-    "deploy": "gh-pages -d dist --dotfiles --nojekyll"
+    "deploy": "gh-pages -d dist --dotfiles --nojekyll",
+    "review": "bash /home/nishel/unico-tools/gemini-review.sh",
+    "export-review": "bash /home/nishel/unico-tools/export-review.sh",
+    "gpt-review": "bash /home/nishel/unico-tools/gpt-review.sh"
   },
   "dependencies": {
     "firebase": "^12.14.0",

@@ -6,7 +6,7 @@ import { todayStr } from '../../../core/utils/format'
 const num = (v) => Number(v) || 0
 export const itemsQty = (o) => (o.items || []).reduce((s, it) => s + num(it.qty), 0)
 export const balance = (o) => num(o.price) - num(o.advance)
-export const isOpen = (o) => o.status !== 'dispatched'
+export const isOpen = (o) => o.status !== 'dispatched' && o.status !== 'cancelled'
 
 /** Days until delivery (negative = overdue). null if no delivery date. */
 export function daysToDue(o) {

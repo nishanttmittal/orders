@@ -3,13 +3,12 @@
  * (product · finish · qty) + transport + remarks. Owner also enters price &
  * advance (hidden from the production manager).
  */
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { Button, Card, FieldLabel, TextInput, NumberInput, Select, DateInput, useToast, Toast } from '../../../core/ui'
 import { todayStr, fmtNum } from '../../../core/utils/format'
 import { useOrders } from '../OrdersContext'
 import { FINISHES } from '../config'
-
-const pad = (n) => `UO-${String(n).padStart(4, '0')}`
+import { nextOrderNo } from '../orderNo'
 
 export default function NewOrder({ owner = false }) {
   const { orders, clients, products, log } = useOrders()
@@ -23,34 +22,39 @@ export default function NewOrder({ owner = false }) {
   const [remarks, setRemarks] = useState('')
   const [price, setPrice] = useState('')
   const [advance, setAdvance] = useState('')
+  const [saving, setSaving] = useState(false)
+  const busyRef = useRef(false)   // synchronous double-tap guard (React state updates too late)
 
   const prodOpts = [{ value: '', label: '— product —' }, ...[...products.list].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map(p => ({ value: p.name, label: p.name }))]
   const setItem = (i, patch) => setItems(items.map((it, idx) => idx === i ? { ...it, ...patch } : it))
   const addItem = () => setItems([...items, { product: '', finish: items[items.length - 1]?.finish || 'Chrome', qty: '' }])
   const delItem = (i) => setItems(items.filter((_, idx) => idx !== i))
 
-  const nextNo = () => {
-    let max = 0
-    for (const o of orders.list) { const m = /(\d+)\s*$/.exec(o.orderNo || ''); if (m) max = Math.max(max, Number(m[1])) }
-    return pad(max + 1)
-  }
-
   const save = () => {
+    if (busyRef.current) return   // block a rapid double-tap from creating two orders
     const cn = clientName.trim()
     if (!cn) return show('Enter client name', 2000)
     const cleanItems = items.filter(it => it.product && Number(it.qty) > 0).map(it => ({ product: it.product, finish: it.finish, qty: Number(it.qty) }))
     if (cleanItems.length === 0) return show('Add at least one product + qty', 2500)
-    const orderNo = nextNo()
-    orders.insert({
-      orderNo, orderDate, clientName: cn, deliveryDate, items: cleanItems,
-      transport: transport.trim(), remarks: remarks.trim(), status: 'pending',
-      price: owner ? Number(price) || 0 : 0, advance: owner ? Number(advance) || 0 : 0,
-      createdBy: owner ? 'owner' : 'manager',
-    })
-    if (cn && !clients.list.some(c => c.name.toLowerCase() === cn.toLowerCase())) clients.insert({ name: cn })
-    log('ORDER', `${orderNo} · ${cn} · ${cleanItems.length} item(s)`, owner ? 'owner' : 'manager')
-    show(`Order ${orderNo} saved ✓`)
-    setClientName(''); setDeliveryDate(''); setItems([{ product: '', finish: 'Chrome', qty: '' }]); setTransport(''); setRemarks(''); setPrice(''); setAdvance('')
+    busyRef.current = true
+    setSaving(true)
+    try {
+      const orderNo = nextOrderNo(orders.list)
+      orders.insert({
+        orderNo, orderDate, clientName: cn, deliveryDate, items: cleanItems,
+        transport: transport.trim(), remarks: remarks.trim(), status: 'pending',
+        price: owner ? Number(price) || 0 : 0, advance: owner ? Number(advance) || 0 : 0,
+        createdBy: owner ? 'owner' : 'manager',
+      })
+      if (cn && !clients.list.some(c => c.name.toLowerCase() === cn.toLowerCase())) clients.insert({ name: cn })
+      log('ORDER', `${orderNo} · ${cn} · ${cleanItems.length} item(s)`, owner ? 'owner' : 'manager')
+      show(`Order ${orderNo} saved ✓`)
+      setClientName(''); setDeliveryDate(''); setItems([{ product: '', finish: 'Chrome', qty: '' }]); setTransport(''); setRemarks(''); setPrice(''); setAdvance('')
+    } catch (e) {
+      show('Could not save order, try again', 2500)
+    } finally {
+      setTimeout(() => { busyRef.current = false; setSaving(false) }, 700)   // re-enable even if it threw
+    }
   }
 
   return (
@@ -94,7 +98,7 @@ export default function NewOrder({ owner = false }) {
         )}
       </Card>
 
-      <Button variant="primary" size="lg" className="w-full" onClick={save}>Save Order</Button>
+      <Button variant="primary" size="lg" className="w-full" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save Order'}</Button>
     </div>
   )
 }
