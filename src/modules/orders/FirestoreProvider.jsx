@@ -3,7 +3,8 @@
  * local provider. Seeds the product master on first run (idempotent).
  */
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { onSnapshot, setDoc, deleteDoc, getDocs, writeBatch } from 'firebase/firestore'
+import { setDoc, deleteDoc, writeBatch } from 'firebase/firestore'
+import { onSnapshot, getDocs } from '../../core/db/readmeter'   // metered reads → usage_reads (quota diagnosis)
 import { db, paths, ensureSignedIn, watchAuth } from '../../core/db/firebase'
 import { makeNormalizer } from '../../core/schema/field'
 import { makeId } from '../../core/db/repository'
