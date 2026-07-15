@@ -7,10 +7,6 @@ export const APP_TITLE = 'UNICO Orders'
  *  Everyone else signs in with Google and is granted a role in Admin → Users. */
 export const OWNER_EMAILS = ['nspenterprises24@gmail.com']
 
-/** Legacy password gate (kept only as reference; app now uses Google login). */
-export const ADMIN_PASSWORD = '6133923_N'
-export const MANAGER_PASSWORD = 'nsp@123'
-
 /** Finishes available per order line (per-product). */
 export const FINISHES = ['Chrome', 'Powder', 'Gold', 'Rose Gold', 'Raw']
 

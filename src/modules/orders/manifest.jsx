@@ -4,7 +4,6 @@
  * ownerOnly are hidden from the manager; pages receive an `owner` prop.
  */
 import { OrdersProvider, useOrders } from './OrdersContext'
-import { ADMIN_PASSWORD, MANAGER_PASSWORD } from './config'
 import { isOverdue } from './logic/orders'
 import NewOrder from './pages/NewOrder'
 import Orders from './pages/Orders'
@@ -26,8 +25,6 @@ export const ordersModule = {
   icon: '📋',
   Provider: OrdersProvider,
   HomeStats,
-  adminPassword: ADMIN_PASSWORD,
-  managerPassword: MANAGER_PASSWORD,
   // roles: which signed-in roles see each page. employee = entry only.
   pages: [
     { key: 'newOrder',  title: 'New Order',  desc: 'Enter a client order',     icon: '➕', color: 'from-blue-600 to-blue-700',     roles: ['employee', 'manager', 'owner'], Component: NewOrder },

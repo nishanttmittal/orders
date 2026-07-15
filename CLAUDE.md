@@ -52,7 +52,7 @@ Respond like an experienced manufacturing founder, factory operator, and CTO. Be
 - **Reusable framework** (in `src/core/` + `src/app/`): storage adapter, repository (createCollection/Singleton), schema/field normalizer (add fields without breaking old records), useCollection hook, ui kit, role-based AppShell (worker-locked `?floor=1`/`?welder=1` + `?who=Name` attribution; admin password-gated). New app = a new module on this framework.
 - **Stock is DERIVED from movements** (never stored mutable): receipts − usage + adjustments − approved-rejects. Concurrency-safe, auditable.
 - **Audit policy:** workers entry-only (can fix/cancel only own last same-day entry → void to 0, never hard delete). Admin: Edit (logged old→new), Void (qty 0 + reason), Hard Delete (admin password). Per-entry edit history. Offline persistentLocalCache.
-- **Deploy:** GitHub Pages per repo (base `/<repo>/`), `npm run deploy`. Admin password `6133923_N`.
+- **Deploy:** GitHub Pages per repo (base `/<repo>/`), `npm run deploy`. Admin password `[removed]`.
 - Live apps: Fitting (`/fitting/`), Welder Contractor (`/welder/`), Plating Job Work. Value-chain mapping per the workflow above.
 - See the assistant's memory (`unico-mes-vision`, `project-apps`, `fitting-live-data`) for full per-app detail and the pending roadmap.
 
