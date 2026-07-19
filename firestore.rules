@@ -1,3 +1,18 @@
+// ⛔ DO NOT DEPLOY THIS FILE. It is intentionally NOT the live ruleset.
+//
+// All UNICO apps share ONE Firestore ruleset in the "unico-operations" project.
+// The canonical, deployable source is:
+//     /home/nishel/attendance-app/firestore.rules
+//
+// Deploy ONLY via:  node attendance-app/jobs/deployRules.js
+// Inspect live:     node attendance-app/jobs/getRules.js
+//
+// This file is a STALE LOCAL COPY kept for reference only. It is narrower/older
+// than the live rules and deploying it WOULD SILENTLY BREAK OTHER APPS
+// (a missing rule = default-deny = data looks deleted).
+//
+// ── reference copy below this line ──────────────────────────────────────────
+
 rules_version = '2';
 // ────────────────────────────────────────────────────────────────────────────
 // Firestore rules for "unico-operations" (hosts MULTIPLE UNICO apps).
