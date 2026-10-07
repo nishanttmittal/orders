@@ -50,6 +50,16 @@ export default function AuthGate({ title = 'UNICO Orders', icon = '📋', childr
 
   const email = user && !user.isAnonymous ? user.email || '' : ''
   const role = resolveRole(email, users.list)
+  // Right after Google sign-in the users list has not arrived yet, so a real user (e.g. the manager) has no role
+  // for a moment. Show "checking" for a few seconds before ever saying "No access".
+  // (stored as "the email whose wait is over", so a different login starts its own wait without resetting state)
+  const [graceFor, setGraceFor] = useState('')
+  useEffect(() => {
+    if (!email) return undefined
+    const t = setTimeout(() => setGraceFor(email), 8000)
+    return () => clearTimeout(t)
+  }, [email])
+  const graceOver = graceFor === email
 
   const doSignIn = async () => {
     setBusy(true)
@@ -72,6 +82,14 @@ export default function AuthGate({ title = 'UNICO Orders', icon = '📋', childr
     )
   }
   if (email && role) return children({ role, email, signOut: signOutUser })
+  if (email && !role && !graceOver) {
+    return (
+      <Screen>
+        <div className="text-2xl">🔐</div>
+        <div className="text-sm text-slate-300 mt-2">Checking access…</div>
+      </Screen>
+    )
+  }
   if (email && !role) {
     return (
       <Screen>
