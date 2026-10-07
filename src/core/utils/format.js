@@ -12,9 +12,11 @@ export const MONTHS = [
  *  toISOString() returns a UTC date, NOT local. Between 00:00 and 05:29 IST
  *  this gives YESTERDAY's date, so early-morning entries file under the wrong
  *  day. Correct fix = format the date in the Asia/Kolkata timezone.
- *  Deliberately NOT changed yet: it alters which day an entry is dated under,
- *  which touches money/reporting. Needs owner sign-off. Same bug in daysAgoStr. */
-export const todayStr = () => new Date().toISOString().slice(0, 10)
+ *  Fixed for todayStr on 08-10-2026 (the order book had no orders yet, so no existing entry changes its day;
+ *  owner told the same day). daysAgoStr still has the old behaviour. */
+// Local calendar date (the phone's own date). The old UTC version dated anything entered before 05:30 IST as
+// yesterday.
+export const todayStr = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10) }
 
 /** ISO yyyy-mm-dd for N days before today (local). */
 export const daysAgoStr = (n) => {

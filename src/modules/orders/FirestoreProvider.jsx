@@ -3,7 +3,7 @@
  * local provider. Seeds the product master on first run (idempotent).
  */
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { setDoc, deleteDoc, writeBatch } from 'firebase/firestore'
+import { setDoc, deleteDoc, writeBatch, runTransaction } from 'firebase/firestore'
 import { onSnapshot, getDocs } from '../../core/db/readmeter'   // metered reads → usage_reads (quota diagnosis)
 import { db, paths, ensureSignedIn, watchAuth } from '../../core/db/firebase'
 import { makeNormalizer } from '../../core/schema/field'
@@ -11,6 +11,7 @@ import { makeId } from '../../core/db/repository'
 import { orderSchema, clientSchema, productSchema } from './schema'
 import { DEFAULT_PRODUCTS } from './config'
 import { lastUsedStore } from './data'
+import { nextOrderNo, padOrderNo } from './orderNo'
 import { OrdersCtx } from './OrdersContext'
 
 // authKey re-subscribes the listener when the signed-in user changes (anon →
@@ -76,6 +77,27 @@ export function FirestoreProvider({ children }) {
     setDoc(paths.logDoc(id), { id, ts: new Date().toISOString(), action, detail, by, ref })
   }, [])
 
+  // Order numbers come from one counter shared with the laptop job (which creates orders approved on WhatsApp),
+  // allocated in a transaction so two writers can never get the same number. Offline or slow (4 s): fall back to
+  // the old local max+1 — the order still saves, and the list flags a duplicate label if one ever happens.
+  const ordersRef = useRef([])
+  useEffect(() => { ordersRef.current = orders.list }, [orders.list])
+  const allocOrderNo = useCallback(async () => {
+    const local = () => nextOrderNo(ordersRef.current)
+    try {
+      const viaCounter = runTransaction(db, async (tx) => {
+        const ref = paths.meta('counter')
+        const snap = await tx.get(ref)
+        const localNext = Number(/(\d+)\s*$/.exec(local())?.[1] || 1)
+        const n = Math.max(snap.exists() ? Number(snap.data().next) || 1 : 1, localNext)
+        tx.set(ref, { next: n + 1, updatedAt: new Date().toISOString() }, { merge: true })
+        return padOrderNo(n)
+      })
+      const timeout = new Promise((resolve) => setTimeout(() => resolve(null), 4000))
+      return (await Promise.race([viaCounter, timeout])) || local()
+    } catch { return local() }
+  }, [])
+
   const seededRef = useRef(false)
   useEffect(() => {
     // only seed once a real (allowlisted) user is signed in — writes are denied
@@ -99,6 +121,6 @@ export function FirestoreProvider({ children }) {
     return <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white gap-3"><div className="text-2xl">☁️</div><div className="text-sm text-slate-300">Connecting to cloud…</div></div>
   }
 
-  const value = { orders, clients, products, logs, inbox, users, lastUsed: lastUsedStore, log, cloud: { connected: !error, error } }
+  const value = { orders, clients, products, logs, inbox, users, lastUsed: lastUsedStore, log, allocOrderNo, cloud: { connected: !error, error } }
   return <OrdersCtx.Provider value={value}>{children}</OrdersCtx.Provider>
 }

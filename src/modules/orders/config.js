@@ -9,6 +9,8 @@ export const OWNER_EMAILS = ['nspenterprises24@gmail.com']
 
 /** Finishes available per order line (per-product). */
 export const FINISHES = ['Chrome', 'Powder', 'Gold', 'Rose Gold', 'Raw']
+/** Quantity units per order line (matches what the order group already uses). */
+export const UNITS = ['Nos', 'kg', 'bag', 'box', 'set', 'bundle']
 
 /** Order lifecycle stages. */
 export const STATUSES = [

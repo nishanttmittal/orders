@@ -6,6 +6,7 @@ import { createContext, useContext, useCallback } from 'react'
 import { useCollection } from '../../core/hooks/useCollection'
 import { ordersRepo, clientsRepo, productsRepo, logsRepo, lastUsedStore } from './data'
 import { isFirebaseConfigured } from '../../core/db/firebaseConfig'
+import { nextOrderNo } from './orderNo'
 import { FirestoreProvider } from './FirestoreProvider'
 
 const Ctx = createContext(null)
@@ -28,7 +29,8 @@ export function LocalOrdersProvider({ children }) {
   // WhatsApp inbox + users are cloud-only; stub them for local mode.
   const inbox = { list: [], insert: () => {}, update: () => {}, remove: () => {} }
   const users = { list: [], insert: () => {}, update: () => {}, remove: () => {} }
-  const value = { orders, clients, products, logs, inbox, users, lastUsed: lastUsedStore, log, cloud: { connected: false, error: '' } }
+  const allocOrderNo = async () => nextOrderNo(orders.list)
+  const value = { orders, clients, products, logs, inbox, users, lastUsed: lastUsedStore, log, allocOrderNo, cloud: { connected: false, error: '' } }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 

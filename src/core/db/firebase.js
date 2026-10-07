@@ -50,6 +50,8 @@ export const paths = {
   // device to resolve role; written by owner only (see Firestore rules).
   users: () => coll('users'),
   user: (id) => cdoc('users', id),
+  // Order-number counter shared by the app and the laptop job (transaction-allocated, never reused).
+  meta: (id) => cdoc('meta', id),
 }
 
 // ── Main-session Google auth (so Firestore rules see the email + role) ───────
