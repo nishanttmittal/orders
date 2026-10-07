@@ -42,6 +42,11 @@ export default function AuthGate({ title = 'UNICO Orders', icon = '📋', childr
   const [err, setErr] = useState('')
 
   useEffect(() => watchAuth(setUser), [])
+  useEffect(() => {
+    import('firebase/auth').then(({ getRedirectResult, getAuth }) =>
+      getRedirectResult(getAuth()).catch((e) => setErr(e?.message || 'Google sign-in failed — try again'))
+    ).catch(() => {})
+  }, [])
 
   const email = user && !user.isAnonymous ? user.email || '' : ''
   const role = resolveRole(email, users.list)

@@ -57,7 +57,21 @@ export async function signInWithGoogle() {
   if (!auth) throw new Error('Cloud not configured')
   const provider = new GoogleAuthProvider()
   provider.setCustomParameters({ prompt: 'select_account' })
-  await signInWithPopup(auth, provider)
+  const standalone = typeof window !== 'undefined' &&
+    (window.matchMedia?.('(display-mode: standalone)')?.matches || window.navigator?.standalone === true)
+  if (standalone) {
+    const { signInWithRedirect } = await import('firebase/auth')
+    return signInWithRedirect(auth, provider)
+  }
+  try {
+    return await signInWithPopup(auth, provider)
+  } catch (e) {
+    if (e?.code === 'auth/popup-blocked' || e?.code === 'auth/cancelled-popup-request' || e?.code === 'auth/operation-not-supported-in-this-environment') {
+      const { signInWithRedirect } = await import('firebase/auth')
+      return signInWithRedirect(auth, provider)
+    }
+    throw e
+  }
 }
 export function signOutUser() {
   if (auth) auth.signOut().catch(() => {})
@@ -70,8 +84,14 @@ export function watchAuth(cb) {
 export function ensureSignedIn() {
   return new Promise((resolve, reject) => {
     if (!auth) return reject(new Error('Firebase not configured'))
-    const unsub = onAuthStateChanged(auth, (user) => { if (user) { unsub(); resolve(user.uid) } })
-    signInAnonymously(auth).catch(reject)
+    let triedAnon = false
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user) { unsub(); resolve(user.uid); return }
+      if (!triedAnon) {
+        triedAnon = true
+        signInAnonymously(auth).catch((e) => { unsub(); reject(e) })
+      }
+    })
   })
 }
 
