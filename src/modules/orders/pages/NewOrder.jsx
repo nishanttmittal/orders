@@ -1,16 +1,17 @@
 /**
- * New Order — one simple screen: customer, then item + quantity lines. Everything else (finish, unit, delivery
- * date, note, money) sits behind "More". Saving also sends one clean line to the staff order group
- * (customer, items, quantities only — never the note, transport or money), unless that is switched off.
+ * New Order — one simple screen: customer, then item + quantity lines. The few extras (kg/bag, delivery date,
+ * note, money, and the switch for the group line) sit behind "Aur". Saving sends one clean line to the staff order
+ * group (customer, items, quantities only — never the note or money) unless that switch is turned off.
+ * Finish is part of the item name ("Beta chrome"), the way the order group already writes it.
  */
 import { useState, useRef } from 'react'
 import { Button, Card, FieldLabel, TextInput, NumberInput, Select, DateInput, useToast, Toast } from '../../../core/ui'
 import { todayStr, fmtNum } from '../../../core/utils/format'
 import { useOrders } from '../OrdersContext'
 import { auth } from '../../../core/db/firebase'
-import { FINISHES, UNITS } from '../config'
+import { UNITS } from '../config'
 
-const blank = () => ({ product: '', finish: '', qty: '', unit: 'Nos' })
+const blank = () => ({ product: '', qty: '', unit: 'Nos' })
 const inputCls = 'w-full border-2 border-slate-300 rounded-2xl px-4 py-3 text-base font-semibold focus:outline-none focus:ring-4 focus:ring-blue-200 focus:border-blue-500'
 
 export default function NewOrder({ owner = false, role = '' }) {
@@ -23,9 +24,7 @@ export default function NewOrder({ owner = false, role = '' }) {
   const [clientName, setClientName] = useState('')
   const [items, setItems] = useState([blank()])
   const [more, setMore] = useState(false)
-  const [orderDate, setOrderDate] = useState(todayStr())
   const [deliveryDate, setDeliveryDate] = useState('')
-  const [transport, setTransport] = useState('')
   const [remarks, setRemarks] = useState('')
   const [price, setPrice] = useState('')
   const [advance, setAdvance] = useState('')
@@ -43,15 +42,15 @@ export default function NewOrder({ owner = false, role = '' }) {
     if (!cn) return show('Customer ka naam likhein', 2000)
     const cleanItems = items
       .filter(it => it.product.trim() && Number(it.qty) > 0)
-      .map(it => ({ product: it.product.trim(), finish: it.finish, qty: Number(it.qty), unit: it.unit || 'Nos', dispatched: 0 }))
+      .map(it => ({ product: it.product.trim(), finish: '', qty: Number(it.qty), unit: it.unit || 'Nos', dispatched: 0 }))
     if (cleanItems.length === 0) return show('Item aur quantity likhein', 2500)
     busyRef.current = true
     setSaving(true)
     try {
       const orderNo = await allocOrderNo()
       orders.insert({
-        orderNo, orderDate, clientName: cn, deliveryDate, items: cleanItems,
-        transport: transport.trim(), remarks: remarks.trim(), status: 'pending',
+        orderNo, orderDate: todayStr(), clientName: cn, deliveryDate, items: cleanItems,
+        transport: '', remarks: remarks.trim(), status: 'pending',
         price: owner ? Number(price) || 0 : 0, advance: owner ? Number(advance) || 0 : 0,
         createdBy: owner ? 'owner' : role || 'manager', createdByEmail: (auth?.currentUser?.email || '').toLowerCase(), source: 'app',
         mirror: { status: toGroup && trusted ? 'pending' : 'none' },
@@ -61,8 +60,8 @@ export default function NewOrder({ owner = false, role = '' }) {
         if (!products.list.some(p => (p.name || '').toLowerCase() === it.product.toLowerCase())) products.insert({ name: it.product, order: 999 })
       }
       log('ORDER', `${orderNo} · ${cn} · ${cleanItems.length} item(s)`, owner ? 'owner' : 'manager')
-      show(toGroup && trusted ? `${orderNo} saved ✓ — group me ja raha hai` : `${orderNo} saved ✓`, 2500)
-      setClientName(''); setItems([blank()]); setDeliveryDate(''); setTransport(''); setRemarks(''); setPrice(''); setAdvance(''); setOrderDate(todayStr()); setToGroup(true)
+      show(toGroup && trusted ? `${orderNo} save ✓ — order list me jayega` : `${orderNo} save ✓`, 2500)
+      setClientName(''); setItems([blank()]); setDeliveryDate(''); setRemarks(''); setPrice(''); setAdvance(''); setToGroup(true)
     } catch {
       show('Save nahi hua, dobara try karein', 2500)
     } finally {
@@ -89,10 +88,7 @@ export default function NewOrder({ owner = false, role = '' }) {
               <button onClick={() => delItem(i)} aria-label="Remove item" className="w-10 h-12 rounded-xl bg-red-50 text-red-500 font-bold flex-shrink-0">✕</button>
             </div>
             {more && (
-              <div className="flex gap-1.5">
-                <Select className="flex-1" value={it.finish} onChange={e => setItem(i, { finish: e.target.value })} options={[{ value: '', label: 'Finish —' }, ...FINISHES.map(f => ({ value: f, label: f }))]} />
-                <Select className="w-28" value={it.unit} onChange={e => setItem(i, { unit: e.target.value })} options={UNITS.map(u => ({ value: u, label: u }))} />
-              </div>
+              <Select className="w-32" value={it.unit} onChange={e => setItem(i, { unit: e.target.value })} options={UNITS.map(u => ({ value: u, label: u }))} />
             )}
           </div>
         ))}
@@ -100,14 +96,10 @@ export default function NewOrder({ owner = false, role = '' }) {
         <Button variant="neutral" className="w-full" onClick={addItem}>+ Aur item</Button>
       </Card>
 
-      <button onClick={() => setMore(!more)} className="w-full text-sm font-bold text-slate-500 py-1">{more ? '▲ Kam dikhayein' : '▼ More (finish, kg/bag, delivery date, note)'}</button>
+      <button onClick={() => setMore(!more)} className="w-full text-sm font-bold text-slate-500 py-1">{more ? '▲ Kam dikhayein' : '▼ Aur — kg/bag, delivery, note'}</button>
       {more && (
         <Card className="p-5 space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div><FieldLabel>Order Date</FieldLabel><DateInput className="mt-1" value={orderDate} onChange={e => setOrderDate(e.target.value)} /></div>
-            <div><FieldLabel>Delivery Date</FieldLabel><DateInput className="mt-1" value={deliveryDate} onChange={e => setDeliveryDate(e.target.value)} /></div>
-          </div>
-          <div><FieldLabel>Transport</FieldLabel><TextInput className="mt-1" placeholder="Transporter / gaadi" value={transport} onChange={e => setTransport(e.target.value)} /></div>
+          <div><FieldLabel>Delivery Date</FieldLabel><DateInput className="mt-1" value={deliveryDate} onChange={e => setDeliveryDate(e.target.value)} /></div>
           <div><FieldLabel>Note (sirf app me — group me nahi jata)</FieldLabel><TextInput className="mt-1" placeholder="Koi baat" value={remarks} onChange={e => setRemarks(e.target.value)} /></div>
           {owner && (
             <div className="grid grid-cols-2 gap-3 bg-emerald-50 rounded-xl p-3">
@@ -116,15 +108,16 @@ export default function NewOrder({ owner = false, role = '' }) {
               {(Number(price) > 0 || Number(advance) > 0) && <div className="col-span-2 text-sm font-bold text-emerald-700">Balance: ₹{fmtNum((Number(price) || 0) - (Number(advance) || 0))}</div>}
             </div>
           )}
+          {trusted && (
+            <label className="flex items-center gap-3 text-sm font-semibold text-slate-700">
+              <input type="checkbox" className="w-6 h-6" checked={toGroup} onChange={e => setToGroup(e.target.checked)} />
+              Order list group me bhejo
+            </label>
+          )}
         </Card>
       )}
 
-      {trusted && <label className="flex items-center gap-3 px-2 text-sm font-semibold text-slate-700">
-        <input type="checkbox" className="w-6 h-6" checked={toGroup} onChange={e => setToGroup(e.target.checked)} />
-        Order list group me bhi bhejo
-      </label>}
-
-      <Button variant="primary" size="lg" className="w-full" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save Order'}</Button>
+      <Button variant="primary" size="lg" className="w-full" onClick={save} disabled={saving}>{saving ? 'Save ho raha hai…' : 'Order save'}</Button>
     </div>
   )
 }

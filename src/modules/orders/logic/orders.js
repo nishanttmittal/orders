@@ -29,7 +29,7 @@ export function applyDispatch(o, lineIndex, add) {
 }
 export const dispatchAll = (o) => ({ items: (o.items || []).map((it) => ({ ...it, dispatched: num(it.qty) })), status: 'dispatched' })
 /** The exact line posted to the staff group for one item: "Tilting Chrome : 320 Nos". */
-export const groupLine = (it) => `${[it.product, it.finish].filter(Boolean).join(' ').trim()} : ${num(it.qty)} ${lineUnit(it)}`
+export const groupLine = (it) => `${it.finish && !String(it.product || '').toLowerCase().includes(String(it.finish).toLowerCase()) ? `${it.product} ${it.finish}` : it.product} : ${num(it.qty)} ${lineUnit(it)}`
 
 /** Days until delivery (negative = overdue). null if no delivery date. */
 export function daysToDue(o) {
