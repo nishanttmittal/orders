@@ -7,12 +7,16 @@ import { useState, useRef } from 'react'
 import { Button, Card, FieldLabel, TextInput, NumberInput, Select, DateInput, useToast, Toast } from '../../../core/ui'
 import { todayStr, fmtNum } from '../../../core/utils/format'
 import { useOrders } from '../OrdersContext'
+import { auth } from '../../../core/db/firebase'
 import { FINISHES, UNITS } from '../config'
 
 const blank = () => ({ product: '', finish: '', qty: '', unit: 'Nos' })
 const inputCls = 'w-full border-2 border-slate-300 rounded-2xl px-4 py-3 text-base font-semibold focus:outline-none focus:ring-4 focus:ring-blue-200 focus:border-blue-500'
 
-export default function NewOrder({ owner = false }) {
+export default function NewOrder({ owner = false, role = '' }) {
+  // Only the owner and the manager may send a line to the staff group or add to the item list. An 'employee'
+  // login can still enter orders; those stay in the app. (The laptop job checks the role again before posting.)
+  const trusted = owner || role === 'manager'
   const { orders, clients, products, log, allocOrderNo } = useOrders()
   const { msg, show } = useToast()
 
@@ -49,15 +53,15 @@ export default function NewOrder({ owner = false }) {
         orderNo, orderDate, clientName: cn, deliveryDate, items: cleanItems,
         transport: transport.trim(), remarks: remarks.trim(), status: 'pending',
         price: owner ? Number(price) || 0 : 0, advance: owner ? Number(advance) || 0 : 0,
-        createdBy: owner ? 'owner' : 'manager', source: 'app',
-        mirror: { status: toGroup ? 'pending' : 'none' },
+        createdBy: owner ? 'owner' : role || 'manager', createdByEmail: (auth?.currentUser?.email || '').toLowerCase(), source: 'app',
+        mirror: { status: toGroup && trusted ? 'pending' : 'none' },
       })
       if (!clients.list.some(c => c.name.toLowerCase() === cn.toLowerCase())) clients.insert({ name: cn })
-      for (const it of cleanItems) {
+      for (const it of trusted ? cleanItems : []) {
         if (!products.list.some(p => (p.name || '').toLowerCase() === it.product.toLowerCase())) products.insert({ name: it.product, order: 999 })
       }
       log('ORDER', `${orderNo} · ${cn} · ${cleanItems.length} item(s)`, owner ? 'owner' : 'manager')
-      show(toGroup ? `${orderNo} saved ✓ — group me ja raha hai` : `${orderNo} saved ✓`, 2500)
+      show(toGroup && trusted ? `${orderNo} saved ✓ — group me ja raha hai` : `${orderNo} saved ✓`, 2500)
       setClientName(''); setItems([blank()]); setDeliveryDate(''); setTransport(''); setRemarks(''); setPrice(''); setAdvance(''); setOrderDate(todayStr()); setToGroup(true)
     } catch {
       show('Save nahi hua, dobara try karein', 2500)
@@ -115,10 +119,10 @@ export default function NewOrder({ owner = false }) {
         </Card>
       )}
 
-      <label className="flex items-center gap-3 px-2 text-sm font-semibold text-slate-700">
+      {trusted && <label className="flex items-center gap-3 px-2 text-sm font-semibold text-slate-700">
         <input type="checkbox" className="w-6 h-6" checked={toGroup} onChange={e => setToGroup(e.target.checked)} />
         Order list group me bhi bhejo
-      </label>
+      </label>}
 
       <Button variant="primary" size="lg" className="w-full" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save Order'}</Button>
     </div>
