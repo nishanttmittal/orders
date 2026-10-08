@@ -11,6 +11,7 @@ import { balance, daysToDue, isOverdue, isOpen, lineSent, lineBalance, lineUnit,
 import { duplicateOrderNos } from '../orderNo'
 import { auth } from '../../../core/db/firebase'
 import Suggest from '../Suggest'
+import { itemKey } from '../logic/itemName'
 import { askDeletePassword } from '../deleteGate'
 import { useL } from '../i18n'
 
@@ -47,6 +48,27 @@ export default function Orders({ owner = false, role = '' }) {
       // Baaki: oldest first (those are the ones being dispatched). Poora gaya / Sab: newest first.
       .sort((a, b) => { const c = (a.orderDate || '').localeCompare(b.orderDate || '') || (a.orderNo || '').localeCompare(b.orderNo || ''); return filter === 'open' ? c : -c })
   }, [orders.list, q, filter])
+
+  // Baaki view only: orders of the same customer are shown together (see groupCard). Same customer = same name,
+  // ignoring capitals and extra spaces. A search that names an order number shows the orders one by one.
+  const [openClient, setOpenClient] = useState(null)
+  const rows = useMemo(() => {
+    if (filter !== 'open' || /uo-?\d/i.test(q)) return list.map(o => ({ o }))
+    const by = new Map()
+    for (const o of list) { const key = String(o.clientName || '').trim().toLowerCase().replace(/\s+/g, ' '); if (!by.has(key)) by.set(key, []); by.get(key).push(o) }
+    return [...by.entries()].map(([key, os]) => {
+      if (os.length === 1) return { o: os[0] }
+      const items = new Map()
+      for (const o of os) for (const it of o.items || []) {
+        const bal = lineBalance(o, it); if (!(bal > 0)) continue
+        const k = `${itemKey(it.product)}|${lineUnit(it)}`
+        if (!items.has(k)) items.set(k, { name: it.product, unit: lineUnit(it), bal: 0 })
+        items.get(k).bal += bal
+      }
+      const units = [...new Set([...items.values()].map(x => x.unit))]
+      return { key, name: os[0].clientName, orders: os, items: [...items.values()], unit: units.length === 1 ? units[0] : '', left: os.reduce((t, o) => t + orderBalance(o), 0) }
+    })
+  }, [list, filter, q])
 
   const overdue = orders.list.filter(o => !o.test && isOverdue(o))
   const dupNos = useMemo(() => duplicateOrderNos(orders.list), [orders.list])
@@ -194,29 +216,8 @@ export default function Orders({ owner = false, role = '' }) {
     <button key={k} onClick={() => setFilter(k)} className={`flex-1 py-2.5 rounded-xl text-sm font-bold ${filter === k ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>{label}</button>
   )
 
-  return (
-    <div className="max-w-lg mx-auto p-4 space-y-4">
-      <Toast msg={msg} />
-
-      {overdue.length > 0 && (
-        <Card className="p-4 border border-red-200 bg-red-50">
-          <div className="text-sm font-bold text-red-700">⏰ {overdue.length} {L('orders late:', 'order late:')} {overdue.slice(0, 3).map(o => o.clientName).join(', ')}{overdue.length > 3 ? '…' : ''}</div>
-        </Card>
-      )}
-      {dupNos.size > 0 && (
-        <Card className="p-4 border border-rose-300 bg-rose-50">
-          <div className="text-sm font-semibold text-rose-700">⚠ {L('Order number used twice:', 'Order number do baar:')} {[...dupNos].join(', ')}</div>
-        </Card>
-      )}
-
-      <div className="flex gap-2">{chip('open', L('Pending', 'Baaki'))}{chip('done', L('Dispatched', 'Poora gaya'))}{chip('all', L('All', 'Sab'))}</div>
-      <SearchBar value={q} onChange={setQ} placeholder={L('Customer, item or order no…', 'Customer, item ya order no…')} />
-
-      {list.length === 0 ? (
-        <Card className="p-8 text-center text-slate-400">{filter === 'open' ? L('No pending orders.', 'Koi order baaki nahi.') : L('No orders.', 'Koi order nahi.')}</Card>
-      ) : (
-        <div className="space-y-2">
-          {list.map(o => {
+  // One order's card (also used inside a customer's group card).
+  const orderCard = (o) => {
             const open = openId === o.id; const left = orderBalance(o); const total = itemsQty(o); const d = daysToDue(o)
             const m = MIRROR[o.mirror?.status]
             return (
@@ -325,7 +326,50 @@ export default function Orders({ owner = false, role = '' }) {
                 )}
               </Card>
             )
-          })}
+  }
+  // Baaki view: a customer with more than one pending order gets ONE card — the total still to go and every item
+  // added up across his orders. Tap it to see the orders themselves (each keeps its own number, date and entries;
+  // the orders are shown together, never joined into one).
+  const groupCard = (g) => {
+    const open = openClient === g.key
+    return (
+      <Card key={'g' + g.key} className="p-4 border-2 border-blue-100">
+        <div className="flex items-start justify-between gap-2 cursor-pointer" onClick={() => { setOpenClient(open ? null : g.key); setEntry(null) }}>
+          <div className="min-w-0">
+            <div className="font-bold text-slate-800 truncate">{g.name} <span className="text-xs text-blue-600 font-bold">{g.orders.length} {L('orders', 'order')}</span></div>
+            <div className="text-xs text-slate-500 mt-0.5 line-clamp-3">{g.items.map(x => `${x.name} ${qn(x.bal)}${x.unit !== 'Nos' ? ' ' + x.unit : ''}`).join(' · ')}</div>
+            <div className="text-[11px] text-slate-400 mt-0.5">{g.orders.map(o => o.orderNo).join(' · ')}</div>
+          </div>
+          <span className="text-[11px] font-bold px-2 py-1 rounded-lg bg-amber-100 text-amber-700 flex-shrink-0 text-right">{g.unit ? `${L('Pending', 'Baaki')} ${qn(g.left)} ${g.unit}` : L(`${g.items.length} items pending`, `${g.items.length} item baaki`)}</span>
+        </div>
+        {open && <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">{g.orders.map(orderCard)}</div>}
+      </Card>
+    )
+  }
+
+  return (
+    <div className="max-w-lg mx-auto p-4 space-y-4">
+      <Toast msg={msg} />
+
+      {overdue.length > 0 && (
+        <Card className="p-4 border border-red-200 bg-red-50">
+          <div className="text-sm font-bold text-red-700">⏰ {overdue.length} {L('orders late:', 'order late:')} {overdue.slice(0, 3).map(o => o.clientName).join(', ')}{overdue.length > 3 ? '…' : ''}</div>
+        </Card>
+      )}
+      {dupNos.size > 0 && (
+        <Card className="p-4 border border-rose-300 bg-rose-50">
+          <div className="text-sm font-semibold text-rose-700">⚠ {L('Order number used twice:', 'Order number do baar:')} {[...dupNos].join(', ')}</div>
+        </Card>
+      )}
+
+      <div className="flex gap-2">{chip('open', L('Pending', 'Baaki'))}{chip('done', L('Dispatched', 'Poora gaya'))}{chip('all', L('All', 'Sab'))}</div>
+      <SearchBar value={q} onChange={setQ} placeholder={L('Customer, item or order no…', 'Customer, item ya order no…')} />
+
+      {list.length === 0 ? (
+        <Card className="p-8 text-center text-slate-400">{filter === 'open' ? L('No pending orders.', 'Koi order baaki nahi.') : L('No orders.', 'Koi order nahi.')}</Card>
+      ) : (
+        <div className="space-y-2">
+          {rows.map(row => (row.orders ? groupCard(row) : orderCard(row.o)))}
         </div>
       )}
     </div>

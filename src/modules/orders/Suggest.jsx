@@ -6,13 +6,7 @@
  */
 import { useMemo, useState } from 'react'
 import { useL } from './i18n'
-
-const SYN = [
-  [/\bt\.?m\b|\btil\s*til\b|\btelting\b|\btitling\b/g, 'tilting'], [/\bp\.?m\b|\bp\.?b\b|\bpush\s*back\b|\bpushbek\b/g, 'pushback'],
-  [/\bb[ei]+ta\b/g, 'beta'], [/\bc(h)?o?r[oa]?me?\b|\bcr\b/g, 'chrome'], [/\bp\.?c\b/g, 'powder'], [/\bs[iy]n[ck]h?ro\b|\bsingh?ro\b/g, 'synchro'],
-  [/\bplet\b|\bpilet\b/g, 'plate'], [/\bta+pp?er\b/g, 'taper'], [/\bpuna\b|\bpoona\b/g, 'pune'], [/\bpaip\b/g, 'pipe'],
-]
-const norm = (t) => { let x = ' ' + String(t || '').toLowerCase().replace(/[()"'.,/\\-]+/g, ' ') + ' '; for (const [re, to] of SYN) x = x.replace(re, to); return x.replace(/\s+/g, ' ').trim() }
+import { itemKey as norm } from './logic/itemName'
 
 export default function Suggest({ value, onChange, onPick, options = [], placeholder = '', className = '' }) {
   const max = 80   // the list scrolls, so show every match (up to 80), not only the first few
