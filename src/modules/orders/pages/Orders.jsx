@@ -63,7 +63,10 @@ export default function Orders({ owner = false, role = '' }) {
       setEntry(null)
       return true    // the change is really saved
     } catch (e) {
-      show(/Baaki sirf|Kitna gaya|nahi mil/.test(e?.message || '') ? e.message.replace(' (nahi mil)', '') : L('NOT saved — check the internet and try again', 'Save NAHI hua — internet dekh kar dobara karein'), 4000)
+      const m = String(e?.message || '')
+      const known = /Baaki sirf|Kitna gaya|nahi mil/.test(m)
+      const en = /Baaki sirf (\S+) hai/.test(m) ? `Only ${/Baaki sirf (\S+) hai/.exec(m)[1]} is pending` : /Kitna gaya/.test(m) ? 'How much went? Enter a number' : /Line hata nahi/.test(m) ? 'You cannot remove a line — only the owner can.' : /beech me badal/.test(m) ? 'This order changed meanwhile — close it and open it again.' : m
+      show(known ? L(en, m.replace(' (nahi mil)', '')) : L('NOT saved — check the internet and try again', 'Save NAHI hua — internet dekh kar dobara karein'), 4000)
       return false   // nothing was saved: callers must not log it or close the form
     } finally { setWorking(false) }
   }

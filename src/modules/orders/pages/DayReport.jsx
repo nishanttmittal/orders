@@ -37,7 +37,15 @@ export default function DayReport() {
 
   const ownerEmails = useMemo(() => [...OWNERS, ...(users?.list || []).filter((u) => u.role === 'owner' && u.active !== false).map((u) => (u.email || '').toLowerCase())], [users?.list])
   const isOwner = (l) => !!l.byEmail && ownerEmails.includes(l.byEmail)
-  const who = (l) => (users?.list || []).find((u) => (u.email || '').toLowerCase() === l.byEmail)?.name || (isOwner(l) ? 'Owner' : l.byEmail || l.by || '')
+  // name of the person: from the signed-in email on the entry; for older entries that only carry a role label,
+  // the name of the (single) user with that role
+  const who = (l) => {
+    const byMail = (users?.list || []).find((u) => (u.email || '').toLowerCase() === l.byEmail)?.name
+    if (byMail) return byMail
+    if (l.byEmail) return ownerEmails.includes(l.byEmail) ? 'Owner' : l.byEmail
+    const sameRole = (users?.list || []).filter((u) => u.role === l.by && u.active !== false)
+    return l.by === 'owner' ? 'Owner' : sameRole.length === 1 ? sameRole[0].name || sameRole[0].email : l.by || ''
+  }
 
   // 2) dispatch of the day, from each line's own dispatch log
   const dispatch = useMemo(() => {
@@ -58,18 +66,38 @@ export default function DayReport() {
     return [...byClient.values()].sort((a, b) => b.total - a.total)
   }, [orders.list, day])
   const maxTotal = Math.max(1, ...dispatch.map((c) => c.total))
+  // the same dispatch added up item by item (what left the factory that day)
+  const itemTotals = useMemo(() => {
+    const m = new Map()
+    for (const c of dispatch) for (const x of c.lines) { const k = `${String(x.item).toLowerCase()}|${x.unit}`; if (!m.has(k)) m.set(k, { item: x.item, unit: x.unit, qty: 0 }); m.get(k).qty += x.qty }
+    return [...m.values()].sort((a, b) => b.qty - a.qty)
+  }, [dispatch])
 
   const dayLogs = useMemo(() => logs.list.filter((l) => dayOf(l.ts) === day).sort((a, b) => (b.ts || '').localeCompare(a.ts || '')), [logs.list, day])
   const newOrders = useMemo(() => orders.list.filter((o) => !o.test && dayOf(o.createdAt) === day && o.source !== 'pad-2026-10-07').sort((a, b) => (a.orderNo || '').localeCompare(b.orderNo || '')), [orders.list, day])
   const changes = dayLogs.filter((l) => CHANGE[l.action] && (mine || !isOwner(l)))
   const count = (a) => dayLogs.filter((l) => l.action === a).length
+  const shareText = () => [
+    `UNICO — ${nice(day)}`,
+    `${L('New orders', 'Naye order')}: ${newOrders.length}`,
+    ...(dispatch.length ? ['', L('Dispatched:', 'Maal gaya:'), ...dispatch.map((c) => `${c.client}: ${c.lines.map((x) => `${x.item} ${qn(x.qty)} ${x.unit}`).join(', ')}`)] : ['', L('No dispatch entered.', 'Koi maal gaya entry nahi.')]),
+  ].join('\n')
+  const share = async () => {
+    const text = shareText()
+    try { if (navigator.share) await navigator.share({ text }); else { await navigator.clipboard.writeText(text); window.alert(L('Copied — paste it anywhere.', 'Copy ho gaya — kahin bhi paste karein.')) } } catch { /* share sheet closed */ }
+  }
   const stat = (n, label, tone) => (<div className={`flex-1 rounded-2xl px-2 py-3 text-center ${tone}`}><div className="text-2xl font-bold leading-none">{n}</div><div className="text-[11px] font-semibold mt-1 leading-tight">{label}</div></div>)
 
   return (
     <div className="max-w-lg mx-auto p-4 space-y-4">
       <div className="flex items-center justify-between gap-2">
-        <button onClick={() => setDay(shift(day, -1))} className="w-11 h-11 rounded-xl bg-slate-100 text-slate-600 text-xl font-bold">‹</button>
-        <div className="text-center"><div className="font-bold text-slate-800">{nice(day)}</div>{day === todayStr() && <div className="text-[11px] text-emerald-600 font-bold">{L('Today', 'Aaj')}</div>}</div>
+        <button aria-label="Previous day" onClick={() => setDay(shift(day, -1))} className="w-11 h-11 rounded-xl bg-slate-100 text-slate-600 text-xl font-bold">‹</button>
+        {/* tap the date to open the phone's calendar and pick any earlier day */}
+        <label className="flex-1 text-center relative">
+          <div className="font-bold text-slate-800">{nice(day)} <span className="text-blue-600 text-xs">📅</span></div>
+          <div className="text-[11px] font-bold text-emerald-600">{day === todayStr() ? L('Today', 'Aaj') : L('tap to change the date', 'date badalne ke liye dabayein')}</div>
+          <input type="date" value={day} max={todayStr()} onChange={(e) => e.target.value && setDay(e.target.value)} className="absolute inset-0 w-full h-full opacity-0" aria-label="Pick a date" />
+        </label>
         <button onClick={() => setDay(shift(day, 1))} disabled={day >= todayStr()} className="w-11 h-11 rounded-xl bg-slate-100 text-slate-600 text-xl font-bold disabled:opacity-30">›</button>
       </div>
 
@@ -97,6 +125,13 @@ export default function DayReport() {
         ))}
       </Card>
 
+      {itemTotals.length > 0 && (
+        <Card className="p-4 space-y-1.5">
+          <div className="text-xs font-bold uppercase tracking-wide text-slate-500">{L('Dispatched — item totals', 'Maal gaya — item ka total')}</div>
+          {itemTotals.map((x) => (<div key={x.item + x.unit} className="flex justify-between gap-2 text-sm"><span className="text-slate-700 min-w-0 truncate">{x.item}</span><span className="font-bold text-slate-800 flex-shrink-0">{qn(x.qty)} {x.unit}</span></div>))}
+        </Card>
+      )}
+
       <Card className="p-4 space-y-2">
         <div className="text-xs font-bold uppercase tracking-wide text-slate-500">{L('New orders', 'Naye order')} ({newOrders.length})</div>
         {newOrders.length === 0 && <div className="text-sm text-slate-400">{L('None.', 'Koi nahi.')}</div>}
@@ -121,6 +156,7 @@ export default function DayReport() {
           )
         })}
       </Card>
+      <button onClick={share} className="w-full py-3 rounded-2xl bg-slate-800 text-white text-sm font-bold">{L('Share this day (dispatch summary)', 'Is din ka summary share karein')}</button>
     </div>
   )
 }

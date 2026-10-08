@@ -10,6 +10,7 @@ import Orders from './pages/Orders'
 import Doubts from './pages/Doubts'
 import ItemWise from './pages/ItemWise'
 import DayReport from './pages/DayReport'
+import Logs from './pages/Logs'
 import { useL } from './i18n'
 import Dashboard from './pages/Dashboard'
 import Admin from './pages/Admin'
@@ -40,6 +41,7 @@ export const ordersModule = {
     // WhatsApp Inbox tile hidden 08-10-2026: orders found on WhatsApp are approved by the owner's reply and arrive
     // here already created, so a second review screen would only add a step. (pages/WhatsAppInbox.jsx is kept.)
     { key: 'report',    title: ['Day Report', 'Din ka Report'],    desc: ['Dispatch client-wise · every change', 'Maal gaya client-wise · har badlav'], icon: '📊', color: 'from-sky-600 to-sky-700', roles: ['owner'], Component: DayReport },
+    { key: 'logs',      title: ['Logs', 'Logs'],                   desc: ['Everything done in the app — who, when, what', 'App me kisne kab kya kiya'], icon: '🔎', color: 'from-violet-600 to-violet-700', roles: ['owner'], Component: Logs },
     { key: 'dashboard', title: ['Money', 'Paisa'],                 desc: ['Order value, advance, outstanding', 'Order value, advance, baaki paisa'], icon: '💰', color: 'from-emerald-600 to-emerald-700', roles: ['owner'], Component: Dashboard },
     { key: 'admin',     title: ['Admin', 'Admin'],                 desc: ['Items, customers, users, backup', 'Item, customer, user, backup'], icon: '⚙️', color: 'from-slate-600 to-slate-700', roles: ['owner'], Component: Admin },
   ],
