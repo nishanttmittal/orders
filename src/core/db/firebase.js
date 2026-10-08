@@ -52,6 +52,9 @@ export const paths = {
   user: (id) => cdoc('users', id),
   // Order-number counter shared by the app and the laptop job (transaction-allocated, never reused).
   meta: (id) => cdoc('meta', id),
+  // Doubtful orders for the owner / manager to clear (from the paper list and the nightly WhatsApp scan).
+  doubts: () => coll('doubts'),
+  doubt: (id) => cdoc('doubts', id),
 }
 
 // ── Main-session Google auth (so Firestore rules see the email + role) ───────

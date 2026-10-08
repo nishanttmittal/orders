@@ -58,6 +58,7 @@ export function FirestoreProvider({ children }) {
   const logs     = useCloudCollection(paths.logs, paths.logDoc, (r) => r, authKey)
   const inbox    = useCloudCollection(paths.inbox, paths.inboxDoc, (r) => r, authKey)
   const users    = useCloudCollection(paths.users, paths.user, (r) => r, authKey)
+  const doubts   = useCloudCollection(paths.doubts, paths.doubt, (r) => r, authKey)
 
   useEffect(() => {
     let done = false
@@ -121,6 +122,6 @@ export function FirestoreProvider({ children }) {
     return <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white gap-3"><div className="text-2xl">☁️</div><div className="text-sm text-slate-300">Connecting to cloud…</div></div>
   }
 
-  const value = { orders, clients, products, logs, inbox, users, lastUsed: lastUsedStore, log, allocOrderNo, cloud: { connected: !error, error } }
+  const value = { orders, clients, products, logs, inbox, users, doubts, lastUsed: lastUsedStore, log, allocOrderNo, cloud: { connected: !error, error } }
   return <OrdersCtx.Provider value={value}>{children}</OrdersCtx.Provider>
 }

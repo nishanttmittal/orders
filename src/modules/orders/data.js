@@ -19,4 +19,5 @@ export const productsRepo = createCollection(KEYS.products, {
   normalize: makeNormalizer(productSchema),
 })
 export const logsRepo = createCollection(KEYS.logs, { seed: () => [] })
+export const doubtsRepo = createCollection('doubts', { seed: () => [] })
 export const lastUsedStore = createSingleton(KEYS.lastUsed, {})
