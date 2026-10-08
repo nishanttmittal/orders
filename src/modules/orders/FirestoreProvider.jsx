@@ -9,7 +9,7 @@ import { setDoc, deleteDoc, writeBatch, runTransaction } from 'firebase/firestor
 // network): the write is stored on this phone and syncs by itself. A rejected write throws.
 const settle = (p, ms = 5000) => Promise.race([p.then(() => 'cloud'), new Promise((resolve) => setTimeout(() => resolve('local'), ms))])
 import { onSnapshot, getDocs } from '../../core/db/readmeter'   // metered reads → usage_reads (quota diagnosis)
-import { db, paths, ensureSignedIn, watchAuth } from '../../core/db/firebase'
+import { db, auth, paths, ensureSignedIn, watchAuth } from '../../core/db/firebase'
 import { makeNormalizer } from '../../core/schema/field'
 import { makeId } from '../../core/db/repository'
 import { orderSchema, clientSchema, productSchema } from './schema'
@@ -92,7 +92,9 @@ export function FirestoreProvider({ children }) {
 
   const log = useCallback((action, detail, by = 'user', ref = '') => {
     const id = makeId('log')
-    setDoc(paths.logDoc(id), { id, ts: new Date().toISOString(), action, detail, by, ref })
+    // byEmail comes from the signed-in Google account, so the owner's review screen does not depend on the
+    // role label a screen passes in
+    setDoc(paths.logDoc(id), { id, ts: new Date().toISOString(), action, detail, by, ref, byEmail: (auth?.currentUser?.email || '').toLowerCase() })
   }, [])
 
   // Order numbers come from one counter shared with the laptop job (which creates orders approved on WhatsApp),

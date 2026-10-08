@@ -6,6 +6,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Card } from '../../../core/ui'
 import { useOrders } from '../OrdersContext'
+import { OWNER_EMAILS } from '../config'
+
+// Whose entry is it? Decided by the signed-in email stored with the entry. An entry counts as the owner's only when
+// that email is an owner login; anything else (including an entry with no email) is shown for review.
+const OWNERS = OWNER_EMAILS.map((e) => e.toLowerCase())
+const isOwners = (l, ownerUsers) => !!l.byEmail && (OWNERS.includes(l.byEmail) || ownerUsers.includes(l.byEmail))
 
 const LABEL = {
   ORDER: ['Naya order', 'bg-blue-100 text-blue-700'], DISPATCH: ['Maal gaya', 'bg-emerald-100 text-emerald-700'], DISPATCH_ALL: ['Poora order gaya', 'bg-emerald-100 text-emerald-700'],
@@ -17,14 +23,15 @@ const SEEN_KEY = 'ord:changesSeenAt'
 const when = (ts) => { const d = new Date(ts); return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) }
 
 export default function Changes() {
-  const { logs } = useOrders()
+  const { logs, users } = useOrders()
+  const ownerUsers = useMemo(() => (users?.list || []).filter((u) => u.role === 'owner' && u.active !== false).map((u) => (u.email || '').toLowerCase()), [users?.list])
   const [onlyManager, setOnlyManager] = useState(true)
   const [seenAt] = useState(() => { try { return localStorage.getItem(SEEN_KEY) || '' } catch { return '' } })
   useEffect(() => { try { localStorage.setItem(SEEN_KEY, new Date().toISOString()) } catch { /* private mode: nothing to remember */ } }, [])
 
   const list = useMemo(() => [...logs.list]
-    .filter(l => LABEL[l.action] && (!onlyManager || (l.by && l.by !== 'owner' && l.by !== 'claude')))
-    .sort((a, b) => (b.ts || '').localeCompare(a.ts || '')).slice(0, 300), [logs.list, onlyManager])
+    .filter(l => LABEL[l.action] && (!onlyManager || !isOwners(l, ownerUsers)))
+    .sort((a, b) => (b.ts || '').localeCompare(a.ts || '')).slice(0, 300), [logs.list, onlyManager, ownerUsers])
   const fresh = list.filter(l => (l.ts || '') > seenAt).length
 
   return (
@@ -41,7 +48,7 @@ export default function Changes() {
           <Card key={l.id} className={`p-3 ${(l.ts || '') > seenAt ? 'border-2 border-blue-200' : ''}`}>
             <div className="flex items-center justify-between gap-2">
               <span className={`text-[11px] font-bold px-2 py-1 rounded-lg ${cls}`}>{label}</span>
-              <span className="text-[11px] text-slate-400">{when(l.ts)} · {l.by === 'manager' ? 'Anshul ji' : l.by}</span>
+              <span className="text-[11px] text-slate-400">{when(l.ts)} · {(users?.list || []).find((u) => (u.email || '').toLowerCase() === l.byEmail)?.name || (isOwners(l, ownerUsers) ? 'Owner' : l.byEmail || l.by || '')}</span>
             </div>
             <div className="text-sm text-slate-800 mt-1.5 whitespace-pre-line">{l.detail}</div>
           </Card>

@@ -60,7 +60,7 @@ export default function Orders({ owner = false, role = '' }) {
       show(typeof okMsg === 'function' ? okMsg(next) : okMsg)
       setEntry(null)
     } catch (e) {
-      show(/Baaki sirf|Kitna gaya|nahi mil/.test(e?.message || '') ? e.message : 'Save NAHI hua — internet dekh kar dobara karein', 3500)
+      show(/Baaki sirf|Kitna gaya|nahi mil/.test(e?.message || '') ? e.message.replace(' (nahi mil)', '') : 'Save NAHI hua — internet dekh kar dobara karein', 4000)
     } finally { setWorking(false) }
   }
   const saveGaya = (o, i, amount) => {
@@ -106,7 +106,13 @@ export default function Orders({ owner = false, role = '' }) {
     })
     if (!diff.length) { setEdit(null); return show('Kuch badla nahi', 1500) }
     const email = (auth?.currentUser?.email || '').toLowerCase()
+    const startCount = (o.items || []).length
     run(o, (latest) => {
+      // The order may have changed on the other phone since this edit was opened. Rows are matched to lines by
+      // position, so if the number of lines is different now, stop: saving would drop or misplace a line.
+      if ((latest.items || []).length !== startCount || latest.status === 'cancelled') throw new Error('Order nahi mila jaisa tha — beech me badal gaya. Band karke dobara kholein.')
+      // and the "manager cannot remove a line" rule is applied to the latest lines, not to what this phone remembered
+      if (!owner && (latest.items || []).some((_, i) => !used.includes(edit.rows[i]))) throw new Error('Line hata nahi sakte — sirf owner kar sakte hain. (nahi mil)')
       // rows are matched to the latest lines by position; what has already gone on a line is always kept
       const items = edit.rows.map((r, i) => ({ r, old: (latest.items || [])[i] })).filter(({ r }) => used.includes(r)).map(({ r, old }) => {
         const sentNow = old ? lineSent(latest, old) : 0
