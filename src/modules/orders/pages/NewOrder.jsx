@@ -78,7 +78,7 @@ export default function NewOrder({ owner = false, role = '' }) {
       <Toast msg={msg} />
       <Card className="p-5 space-y-3">
         <FieldLabel>Customer</FieldLabel>
-        <Suggest value={clientName} onChange={setClientName} options={clients.list} placeholder="Customer ka naam" className={inputCls} max={6} />
+        <Suggest value={clientName} onChange={setClientName} options={clients.list} placeholder="Customer ka naam" className={inputCls} />
       </Card>
 
       <Card className="p-5 space-y-3">
