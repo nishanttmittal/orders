@@ -10,6 +10,7 @@ import { useOrders } from '../OrdersContext'
 import { balance, daysToDue, isOverdue, isOpen, lineSent, lineBalance, lineUnit, orderBalance, orderUnit, linesLeft, itemsQty, applyDispatch, undoLastDispatch, dispatchAll, groupLine } from '../logic/orders'
 import { duplicateOrderNos } from '../orderNo'
 import { auth } from '../../../core/db/firebase'
+import Suggest from '../Suggest'
 
 // What happened to this order's line in the staff order group. `retry` = offer the "Ab bhejo" button.
 const MIRROR = {
@@ -25,7 +26,7 @@ const qn = (n) => (Number.isInteger(Number(n)) ? fmtNum(n) : String(Math.round(N
 
 export default function Orders({ owner = false, role = '' }) {
   const canPost = owner || role === 'manager'
-  const { orders, log } = useOrders()
+  const { orders, products, log } = useOrders()
   const { msg, show } = useToast()
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState('open')
@@ -204,7 +205,7 @@ export default function Orders({ owner = false, role = '' }) {
                         <input className="w-full border-2 border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold" value={edit.client} onChange={e => setEdit({ ...edit, client: e.target.value })} placeholder="Customer" />
                         {edit.rows.map((r, i) => (
                           <div key={i} className="flex gap-1.5 items-center">
-                            <div className="flex-1 min-w-0"><input className="w-full border-2 border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold" value={r.product} onChange={e => setEditRow(i, { product: e.target.value })} placeholder="Item" /></div>
+                            <div className="flex-1 min-w-0"><Suggest className="w-full border-2 border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold" value={r.product} onChange={v => setEditRow(i, { product: v })} options={products.list} placeholder="Item" max={6} /></div>
                             <div className="w-24 flex-shrink-0"><NumberInput inputMode="decimal" className="text-center !px-2 !py-2 !text-sm" value={r.qty} onChange={e => setEditRow(i, { qty: e.target.value })} placeholder="Qty" /></div>
                             {r.sent > 0
                               ? <span className="w-10 text-[10px] text-slate-400 text-center flex-shrink-0">gaya {qn(r.sent)}</span>

@@ -12,6 +12,7 @@ import { todayStr, fmtDate } from '../../../core/utils/format'
 import { useOrders } from '../OrdersContext'
 import { auth } from '../../../core/db/firebase'
 import { groupLine } from '../logic/orders'
+import Suggest from '../Suggest'
 
 const inputCls = 'w-full border-2 border-slate-300 rounded-xl px-3 py-2.5 text-sm font-semibold focus:outline-none focus:ring-4 focus:ring-blue-200 focus:border-blue-500'
 const SRC = { kagaz: 'Kagaz list', whatsapp: 'WhatsApp' }
@@ -130,11 +131,10 @@ export default function Doubts({ owner = false, role = '' }) {
                 {linked && <div className="text-xs text-slate-500">Is order me abhi: {(linked.items || []).map(it => `${it.product} ${it.qty}`).join(' · ')}{linked.status === 'cancelled' ? ' — ORDER CANCEL HAI' : ''}</div>}
                 {rows.map((r, i) => (
                   <div key={i} className="flex gap-1.5 items-center">
-                    <div className="flex-1 min-w-0"><input list="dbt-products" className={inputCls} placeholder="Item" value={r.product} onChange={e => setRow(i, { product: e.target.value })} autoComplete="off" /></div>
+                    <div className="flex-1 min-w-0"><Suggest className={inputCls} placeholder="Item" value={r.product} onChange={v => setRow(i, { product: v })} onPick={p => setRow(i, { product: p.name, unit: p.unit || r.unit || 'Nos' })} options={products.list} max={6} /></div>
                     <div className="w-24 flex-shrink-0"><NumberInput inputMode="decimal" className="text-center !px-2 !py-2.5 !text-sm" placeholder="Qty" value={r.qty} onChange={e => setRow(i, { qty: e.target.value })} /></div>
                   </div>
                 ))}
-                <datalist id="dbt-products">{[...products.list].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map(p => <option key={p.id} value={p.name} />)}</datalist>
                 <button onClick={() => setRows([...rows, { product: '', qty: '', unit: 'Nos' }])} className="text-xs font-bold text-slate-500">+ Aur item</button>
                 <div className="grid grid-cols-2 gap-2 pt-1">
                   {linked

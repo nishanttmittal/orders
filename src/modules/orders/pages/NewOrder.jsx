@@ -10,6 +10,7 @@ import { todayStr, fmtNum } from '../../../core/utils/format'
 import { useOrders } from '../OrdersContext'
 import { auth } from '../../../core/db/firebase'
 import { UNITS } from '../config'
+import Suggest from '../Suggest'
 
 const blank = () => ({ product: '', qty: '', unit: 'Nos' })
 const inputCls = 'w-full border-2 border-slate-300 rounded-2xl px-4 py-3 text-base font-semibold focus:outline-none focus:ring-4 focus:ring-blue-200 focus:border-blue-500'
@@ -77,25 +78,25 @@ export default function NewOrder({ owner = false, role = '' }) {
       <Toast msg={msg} />
       <Card className="p-5 space-y-3">
         <FieldLabel>Customer</FieldLabel>
-        <input list="ord-clients" value={clientName} onChange={e => setClientName(e.target.value)} placeholder="Customer ka naam" className={inputCls} autoComplete="off" />
-        <datalist id="ord-clients">{clients.list.map(c => <option key={c.id} value={c.name} />)}</datalist>
+        <Suggest value={clientName} onChange={setClientName} options={clients.list} placeholder="Customer ka naam" className={inputCls} max={6} />
       </Card>
 
       <Card className="p-5 space-y-3">
         <FieldLabel>Item aur quantity</FieldLabel>
         {items.map((it, i) => (
-          <div key={i} className="space-y-1.5">
-            <div className="flex gap-1.5 items-center">
-              <div className="flex-1 min-w-0"><input list="ord-products" value={it.product} onChange={e => setItem(i, { product: e.target.value })} placeholder="Item" className={inputCls} autoComplete="off" /></div>
-              <div className="w-24 flex-shrink-0"><NumberInput className="text-center !px-2" placeholder="Qty" value={it.qty} onChange={e => setItem(i, { qty: e.target.value })} /></div>
-              <button onClick={() => delItem(i)} aria-label="Remove item" className="w-10 h-12 rounded-xl bg-red-50 text-red-500 font-bold flex-shrink-0">✕</button>
+          <div key={i} className={`space-y-1.5 ${i > 0 ? 'pt-3 border-t border-slate-100' : ''}`}>
+            {/* item on its own full-width row so long names and the suggestion list are readable; quantity below */}
+            <Suggest value={it.product} onChange={v => setItem(i, { product: v })} onPick={p => setItem(i, { product: p.name, unit: p.unit || it.unit || 'Nos' })} options={products.list} placeholder={`Item ${items.length > 1 ? i + 1 : ''}`.trim()} className={inputCls} />
+            <div className="flex gap-2 items-center">
+              <div className="w-36 flex-shrink-0"><NumberInput inputMode="decimal" className="text-center !px-2" placeholder="Qty" value={it.qty} onChange={e => setItem(i, { qty: e.target.value })} /></div>
+              <span className={`text-sm font-bold flex-1 ${it.unit && it.unit !== 'Nos' ? 'text-amber-700' : 'text-slate-400'}`}>{it.unit || 'Nos'}</span>
+              {(items.length > 1 || it.product || it.qty) && <button onClick={() => delItem(i)} aria-label="Remove item" className="w-11 h-11 rounded-xl bg-red-50 text-red-500 font-bold flex-shrink-0">✕</button>}
             </div>
             {more && (
               <Select className="w-32" value={it.unit} onChange={e => setItem(i, { unit: e.target.value })} options={UNITS.map(u => ({ value: u, label: u }))} />
             )}
           </div>
         ))}
-        <datalist id="ord-products">{[...products.list].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map(p => <option key={p.id} value={p.name} />)}</datalist>
         <Button variant="neutral" className="w-full" onClick={addItem}>+ Aur item</Button>
       </Card>
 
