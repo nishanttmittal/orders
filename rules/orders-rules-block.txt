@@ -28,16 +28,25 @@
                         && request.resource.data.get('createdByEmail', '') == tEmail()
                         && request.resource.data.get('price', 0) == 0 && request.resource.data.get('advance', 0) == 0
                         && request.resource.data.get('status', 'pending') != 'cancelled'
+                        && request.resource.data.get('orderNo', '') is string && request.resource.data.get('orderNo', '').matches('^UO-[0-9]{4,6}$')
+                        && request.resource.data.get('clientName', '') is string && request.resource.data.get('clientName', '').size() <= 80
+                        && request.resource.data.items is list && request.resource.data.items.size() >= 1 && request.resource.data.items.size() <= 40
                         && (oManager() || request.resource.data.get('mirror', {}).get('status', 'none') == 'none'));
       // manager: may correct an order and enter dispatch, but never touch identity or money, never cancel, and
-      // never end up with fewer lines than before
+      // never end up with fewer lines than before.
+      // LIMIT (rules cannot loop over a list): the rule checks the NUMBER of lines, not what is in each line. A manager
+      // may rewrite a line's item or quantity — that is the "modify" the owner allows. What makes every such change
+      // visible is not this rule but the nightly audit snapshot taken by the laptop job (Admin SDK), which compares
+      // every order with the day before and writes its own log entries that no app login can alter.
       allow update: if oOwner()
                     || (oManager()
                         && oUnchanged(['orderNo', 'createdByEmail', 'createdBy', 'createdAt', 'price', 'advance', 'source', 'scanRef', 'scanKey', 'cancelledAt', 'cancelledBy', 'cancelReason', 'test'])
                         && resource.data.get('status', 'pending') != 'cancelled'
                         && request.resource.data.get('status', 'pending') != 'cancelled'
                         && request.resource.data.items is list
-                        && request.resource.data.items.size() >= resource.data.get('items', []).size());
+                        && request.resource.data.items.size() >= resource.data.get('items', []).size()
+                        && request.resource.data.items.size() <= 40
+                        && request.resource.data.get('clientName', '') is string && request.resource.data.get('clientName', '').size() <= 80);
       allow delete: if oOwner();
     }
 
@@ -48,8 +57,13 @@
     // change log: write-once, stamped with the signer's own email; only the owner reads it
     match /apps/orders/logs/{id} {
       allow read: if oOwner();
+      // `at` must be the SERVER's clock (so an entry cannot be back-dated), and only the known fields are accepted
       allow create: if oUser() && request.resource.data.get('byEmail', '') == tEmail()
-                    && request.resource.data.get('detail', '') is string && request.resource.data.get('detail', '').size() <= 2000;
+                    && request.resource.data.get('at', null) == request.time
+                    && request.resource.data.keys().hasOnly(['id', 'ts', 'at', 'action', 'detail', 'by', 'ref', 'byEmail'])
+                    && request.resource.data.get('action', '') is string && request.resource.data.get('action', '').size() <= 40
+                    && request.resource.data.get('detail', '') is string && request.resource.data.get('detail', '').size() <= 2000
+                    && (oOwner() || request.resource.data.get('by', '') != 'owner');
       allow update, delete: if false;
     }
 
@@ -64,8 +78,9 @@
     // order-number counter: the number can only go up
     match /apps/orders/meta/{id} {
       allow read: if oUser();
-      allow create: if oUser() && id == 'counter' && request.resource.data.next is int && request.resource.data.next >= 2;
-      allow update: if oUser() && id == 'counter' && request.resource.data.next is int && request.resource.data.next > resource.data.next;
+      // the number moves forward a little at a time: it can never go back, and never be thrown far ahead
+      allow create: if oUser() && id == 'counter' && request.resource.data.next is int && request.resource.data.next >= 2 && request.resource.data.next <= 50;
+      allow update: if oUser() && id == 'counter' && request.resource.data.next is int && request.resource.data.next > resource.data.next && request.resource.data.next <= resource.data.next + 20;
       allow delete: if false;
     }
 

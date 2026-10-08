@@ -3,7 +3,7 @@
  * local provider. Seeds the product master on first run (idempotent).
  */
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { setDoc, deleteDoc, writeBatch, runTransaction } from 'firebase/firestore'
+import { setDoc, deleteDoc, writeBatch, runTransaction, serverTimestamp } from 'firebase/firestore'
 
 // Wait for a cloud write for a few seconds. 'cloud' = the server has it. 'local' = no answer yet (weak / no
 // network): the write is stored on this phone and syncs by itself. A rejected write throws.
@@ -94,7 +94,9 @@ export function FirestoreProvider({ children }) {
     const id = makeId('log')
     // byEmail comes from the signed-in Google account, so the owner's review screen does not depend on the
     // role label a screen passes in
-    setDoc(paths.logDoc(id), { id, ts: new Date().toISOString(), action, detail, by, ref, byEmail: (auth?.currentUser?.email || '').toLowerCase() })
+    // `at` is filled in by the server, so the time of an entry does not depend on the phone's clock (ts is kept for
+    // sorting while the write is still on its way)
+    setDoc(paths.logDoc(id), { id, ts: new Date().toISOString(), at: serverTimestamp(), action: String(action).slice(0, 40), detail: String(detail ?? '').slice(0, 2000), by, ref, byEmail: (auth?.currentUser?.email || '').toLowerCase() })
   }, [])
 
   // Order numbers come from one counter shared with the laptop job (which creates orders approved on WhatsApp),

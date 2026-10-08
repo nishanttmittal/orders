@@ -13,6 +13,7 @@ import { useOrders } from '../OrdersContext'
 import { OWNER_EMAILS } from '../config'
 import { lineUnit } from '../logic/orders'
 import { useL } from '../i18n'
+import { logTime } from '../logTime'
 
 const OWNERS = OWNER_EMAILS.map((e) => e.toLowerCase())
 const qn = (n) => (Number.isInteger(Number(n)) ? fmtNum(n) : String(Math.round(Number(n) * 100) / 100))
@@ -23,6 +24,7 @@ const shift = (day, n) => { const d = new Date(day + 'T12:00:00'); d.setDate(d.g
 const nice = (day) => new Date(day + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' })
 
 const CHANGE = {
+  AUDIT: ['Audit — found by the laptop check', 'Audit — laptop ki jaanch me mila', 'bg-rose-100 text-rose-700'],
   ORDER_EDIT: ['Order corrected', 'Order badla', 'bg-amber-100 text-amber-700'], DISPATCH_UNDO: ['Dispatch entry taken back', 'Gaya-entry hatayi', 'bg-amber-100 text-amber-700'],
   ORDER_ADD_LINE: ['Line added', 'Line jodi', 'bg-amber-100 text-amber-700'], CANCEL_ORDER: ['Order cancelled', 'Order cancel', 'bg-rose-100 text-rose-700'],
   DOUBT_CLEAR: ['Doubt cleared', 'Doubt clear', 'bg-slate-100 text-slate-600'], ADD_CLIENT: ['New customer name', 'Naya customer naam', 'bg-violet-100 text-violet-700'],
@@ -72,7 +74,7 @@ export default function DayReport() {
     return [...m.values()].sort((a, b) => b.qty - a.qty)
   }, [dispatch])
 
-  const dayLogs = useMemo(() => logs.list.filter((l) => dayOf(l.ts) === day).sort((a, b) => (b.ts || '').localeCompare(a.ts || '')), [logs.list, day])
+  const dayLogs = useMemo(() => logs.list.filter((l) => dayOf(logTime(l)) === day).sort((a, b) => logTime(b).localeCompare(logTime(a))), [logs.list, day])
   const newOrders = useMemo(() => orders.list.filter((o) => !o.test && dayOf(o.createdAt) === day && o.source !== 'pad-2026-10-07').sort((a, b) => (a.orderNo || '').localeCompare(b.orderNo || '')), [orders.list, day])
   const changes = dayLogs.filter((l) => CHANGE[l.action] && (mine || !isOwner(l)))
   const count = (a) => dayLogs.filter((l) => l.action === a).length
@@ -149,7 +151,7 @@ export default function DayReport() {
           const [en, hi, cls] = CHANGE[l.action]
           return (
             <div key={l.id} className="border-t border-slate-100 pt-2 first:border-t-0 first:pt-0">
-              <div className="flex items-center justify-between gap-2"><span className={`text-[11px] font-bold px-2 py-0.5 rounded-lg ${cls}`}>{L(en, hi)}</span><span className="text-[11px] text-slate-400">{timeOf(l.ts)} · {who(l)}</span></div>
+              <div className="flex items-center justify-between gap-2"><span className={`text-[11px] font-bold px-2 py-0.5 rounded-lg ${cls}`}>{L(en, hi)}</span><span className="text-[11px] text-slate-400">{timeOf(logTime(l))} · {who(l)}</span></div>
               <div className="text-sm text-slate-800 mt-1 whitespace-pre-line">{l.detail}</div>
             </div>
           )
