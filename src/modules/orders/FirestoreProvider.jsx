@@ -61,6 +61,15 @@ function useCloudCollection(collPath, docPath, normalize, authKey, enabled = tru
       tx.set(docPath(id), patch, { merge: true })
       return patch
     }),
+    // The same for SEVERAL docs at once (customer-wise dispatch over more than one order): all are read, `fn` gets the
+    // latest records and returns { [id]: patch }, and either every patch is written or none is.
+    changeMany: (ids, fn) => runTransaction(db, async (tx) => {
+      const rows = []
+      for (const id of ids) { const snap = await tx.get(docPath(id)); if (snap.exists()) rows.push(normalize({ id: snap.id, ...snap.data() })) }
+      const patches = fn(rows)
+      for (const [id, patch] of Object.entries(patches)) tx.set(docPath(id), patch, { merge: true })
+      return patches
+    }),
     update: (id, patch) => setDoc(docPath(id), patch, { merge: true }),
     remove: (id) => deleteDoc(docPath(id)),
   }

@@ -2,6 +2,7 @@
  * Orders — pure helpers for status, due-dates, and the owner financial view.
  */
 import { todayStr } from '../../../core/utils/format'
+import { itemKey } from './itemName'
 
 const num = (v) => Number(v) || 0
 // quantities are kept to 3 decimals (kg): 2 decimals left a 0.005 that could never be dispatched
@@ -50,6 +51,35 @@ export function undoLastDispatch(o, lineIndex) {
   return { items, status: left === 0 ? 'dispatched' : o.status === 'dispatched' ? 'pending' : o.status }
 }
 export const dispatchAll = (o, by = '') => ({ items: (o.items || []).map((it) => { const left = lineBalance(o, it); return { ...it, dispatched: num(it.qty), log: left > 0 ? [...(it.log || []), { at: new Date().toISOString(), qty: left, by }] : it.log || [] } }), status: 'dispatched' })
+/** Customer-wise dispatch: `add` of one item (same item name by itemKey + same unit) has gone for a customer who has
+ *  several pending orders. It is filled OLDEST ORDER FIRST (order date, then order number), line by line, each line
+ *  only up to its own balance. Cancelled orders take nothing. Throws if more than the customer's total balance of
+ *  that item is entered. Returns { patches: { [orderId]: { items, status } }, parts: [{ id, orderNo, product, qty, unit }] }. */
+export function allocateDispatch(orders, key, unit, add, by = '') {
+  if (!(num(add) > 0)) throw new Error('Kitna gaya? Number likhein')
+  const fits = (it) => itemKey(it.product) === key && lineUnit(it) === unit
+  const live = [...orders].filter((o) => o.status !== 'cancelled')
+    .sort((a, b) => String(a.orderDate || '').localeCompare(String(b.orderDate || '')) || String(a.orderNo || '').localeCompare(String(b.orderNo || '')))
+  const total = r3(live.reduce((t, o) => t + (o.items || []).reduce((s, it) => s + (fits(it) ? lineBalance(o, it) : 0), 0), 0))
+  if (num(add) > total + 1e-9) throw new Error(`Baaki sirf ${total} hai`)
+  let left = r3(add)
+  const patches = {}, parts = []
+  for (const o of live) {
+    let cur = o, touched = false
+    for (let i = 0; i < (o.items || []).length && left > 0; i++) {
+      const it = cur.items[i]
+      if (!fits(it)) continue
+      const take = Math.min(left, lineBalance(cur, it))
+      if (!(take > 0)) continue
+      cur = { ...cur, ...applyDispatch(cur, i, take, by) }
+      left = r3(left - take); touched = true
+      parts.push({ id: o.id, orderNo: o.orderNo, product: it.product, qty: take, unit })
+    }
+    if (touched) patches[o.id] = { items: cur.items, status: cur.status }
+    if (!(left > 0)) break
+  }
+  return { patches, parts }
+}
 /** The exact line posted to the staff group for one item: "Tilting Chrome : 320 Nos". */
 export const groupLine = (it) => `${it.finish && !String(it.product || '').toLowerCase().includes(String(it.finish).toLowerCase()) ? `${it.product} ${it.finish}` : it.product} : ${num(it.qty)} ${lineUnit(it)}`
 

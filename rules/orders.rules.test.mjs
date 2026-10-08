@@ -58,6 +58,16 @@ test('manager: adds a customer and an item name; writes a log line as himself; s
   await assertSucceeds(setDoc(doc(d, D, 'd1'), { status: 'cleared', outcome: 'order me joda', clearedAt: 'x', clearedBy: 'manager', clearedByEmail: MGR, addedLines: [{ product: 'Synchro', qty: 100 }] }, { merge: true }))
 })
 
+test('manager: customer-wise dispatch — several orders changed in ONE transaction', async () => {
+  const d = dbOf(MGR)
+  for (const id of ['m1', 'm2', 'm3', 'm4', 'm5', 'm6']) await seed(O + '/' + id, order({ id, orderNo: 'UO-009' + id.slice(1) }))
+  await assertSucceeds(runTransaction(d, async (tx) => {
+    const ids = ['m1', 'm2', 'm3', 'm4', 'm5', 'm6'], snaps = []
+    for (const id of ids) snaps.push(await tx.get(doc(d, O, id)))
+    snaps.forEach((s2, n) => tx.set(doc(d, O, ids[n]), { items: s2.data().items.map((it, i) => (i === 0 ? { ...it, dispatched: 320, log: [{ at: 'x', qty: 320, by: 'manager' }] } : it)), status: 'pending', lastDispatchAt: 'x' }, { merge: true }))
+  }))
+})
+
 // ---------- what the manager must NEVER be able to do ----------
 test('manager: cannot delete an order, a customer, an item, a log line, a doubt', async () => {
   const d = dbOf(MGR)

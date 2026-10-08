@@ -7,7 +7,7 @@ import { useMemo, useState } from 'react'
 import { Button, Card, FieldLabel, SearchBar, NumberInput, useToast, Toast } from '../../../core/ui'
 import { fmtDate, fmtNum } from '../../../core/utils/format'
 import { useOrders } from '../OrdersContext'
-import { balance, daysToDue, isOverdue, isOpen, lineSent, lineBalance, lineUnit, orderBalance, orderUnit, linesLeft, itemsQty, applyDispatch, undoLastDispatch, dispatchAll, groupLine } from '../logic/orders'
+import { balance, daysToDue, isOverdue, isOpen, lineSent, lineBalance, lineUnit, orderBalance, orderUnit, linesLeft, itemsQty, applyDispatch, undoLastDispatch, dispatchAll, groupLine, allocateDispatch } from '../logic/orders'
 import { duplicateOrderNos } from '../orderNo'
 import { auth } from '../../../core/db/firebase'
 import Suggest from '../Suggest'
@@ -62,7 +62,7 @@ export default function Orders({ owner = false, role = '' }) {
       for (const o of os) for (const it of o.items || []) {
         const bal = lineBalance(o, it); if (!(bal > 0)) continue
         const k = `${itemKey(it.product)}|${lineUnit(it)}`
-        if (!items.has(k)) items.set(k, { name: it.product, unit: lineUnit(it), bal: 0 })
+        if (!items.has(k)) items.set(k, { k, key: itemKey(it.product), name: it.product, unit: lineUnit(it), bal: 0 })
         items.get(k).bal += bal
       }
       const units = [...new Set([...items.values()].map(x => x.unit))]
@@ -216,6 +216,35 @@ export default function Orders({ owner = false, role = '' }) {
     <button key={k} onClick={() => setFilter(k)} className={`flex-1 py-2.5 rounded-xl text-sm font-bold ${filter === k ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>{label}</button>
   )
 
+  // Customer-wise dispatch: "Pushback 700 gaya" entered once on the customer's card. It is shared out oldest order
+  // first, on the LATEST copy of all his orders in one transaction (all of it is saved, or none of it), and each
+  // order gets its own entry in the log exactly as if it had been entered inside that order.
+  const [gEntry, setGEntry] = useState(null)   // { client, k, value }
+  const saveGroupGaya = async (g, x, amount) => {
+    const add = Number(amount ?? gEntry?.value)
+    if (!(add > 0)) return show(L('How much went? Enter a number', 'Kitna gaya? Number likhein'), 2000)
+    if (working) return
+    setWorking(true)
+    try {
+      let parts = []
+      await orders.changeMany(g.orders.map(o => o.id), (latest) => {
+        const res = allocateDispatch(latest, x.key, x.unit, add, by)
+        parts = res.parts
+        const at = new Date().toISOString()
+        return Object.fromEntries(Object.entries(res.patches).map(([id, p]) => [id, { ...p, lastDispatchAt: at }]))
+      })
+      const perOrder = new Map()
+      for (const p of parts) { if (!perOrder.has(p.id)) perOrder.set(p.id, { ...p, qty: 0 }); perOrder.get(p.id).qty += p.qty }
+      for (const p of perOrder.values()) log('DISPATCH', `${p.orderNo} · ${g.name} · ${p.product} +${p.qty} ${p.unit}`, by, p.id)
+      setGEntry(null)
+      show(`${x.name} ${qn(add)} ${L('dispatched', 'gaya')} ✓ — ${[...perOrder.values()].map(p => `${p.orderNo}: ${qn(p.qty)}`).join(', ')}`, 4500)
+    } catch (e) {
+      const m = String(e?.message || '')
+      const only = /Baaki sirf (\S+) hai/.exec(m)
+      show(only ? L(`Only ${only[1]} is pending`, m) : /Kitna gaya/.test(m) ? L('How much went? Enter a number', m) : L('NOT saved — check the internet and try again', 'Save NAHI hua — internet dekh kar dobara karein'), 4000)
+    } finally { setWorking(false) }
+  }
+
   // One order's card (also used inside a customer's group card).
   const orderCard = (o) => {
             const open = openId === o.id; const left = orderBalance(o); const total = itemsQty(o); const d = daysToDue(o)
@@ -342,7 +371,34 @@ export default function Orders({ owner = false, role = '' }) {
           </div>
           <span className="text-[11px] font-bold px-2 py-1 rounded-lg bg-amber-100 text-amber-700 flex-shrink-0 text-right">{g.unit ? `${L('Pending', 'Baaki')} ${qn(g.left)} ${g.unit}` : L(`${g.items.length} items pending`, `${g.items.length} item baaki`)}</span>
         </div>
-        {open && <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">{g.orders.map(orderCard)}</div>}
+        {open && (
+          <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
+            {canPost && g.items.map(x => {
+              const editing = gEntry && gEntry.client === g.key && gEntry.k === x.k
+              return (
+                <div key={x.k} className="rounded-xl bg-blue-50 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-bold text-slate-800 min-w-0">{x.name} <span className="font-semibold text-amber-700 whitespace-nowrap">· {L('Pending', 'Baaki')} {qn(x.bal)} {x.unit}</span></span>
+                    {!editing && <button onClick={() => setGEntry({ client: g.key, k: x.k, value: '' })} className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold flex-shrink-0">{L('Dispatched', 'Maal gaya')}</button>}
+                  </div>
+                  {editing && (
+                    <div className="mt-2 space-y-2">
+                      <div className="flex gap-2 items-center">
+                        <NumberInput autoFocus inputMode="decimal" className="flex-1 text-center !py-2" placeholder={L('How much went now?', 'Abhi kitna gaya?')} value={gEntry.value} onChange={e => setGEntry({ ...gEntry, value: e.target.value })} />
+                        <Button size="sm" variant="primary" disabled={working} onClick={() => saveGroupGaya(g, x)}>OK</Button>
+                        <Button size="sm" variant="neutral" onClick={() => setGEntry(null)}>✕</Button>
+                      </div>
+                      <button disabled={working} onClick={() => saveGroupGaya(g, x, x.bal)} className="w-full py-2 rounded-xl bg-emerald-50 text-emerald-700 text-sm font-bold">{L('All pending went', 'Poora baaki gaya')} ({qn(x.bal)})</button>
+                      <div className="text-[11px] text-slate-500">{L('Fills the oldest order first.', 'Sabse purane order se pehle katega.')}</div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+            <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400 pt-1">{L('Orders', 'Order')}</div>
+            {g.orders.map(orderCard)}
+          </div>
+        )}
       </Card>
     )
   }

@@ -56,3 +56,34 @@ describe('group line', () => {
     expect(groupLine({ product: 'Tilting', finish: 'Powder', qty: 5 })).toBe('Tilting Powder : 5 Nos'); expect(groupLine({ product: 'Taper Pipe (Kg)', qty: 250.5, unit: 'kg' })).toBe('Taper Pipe (Kg) : 250.5 kg')
   })
 })
+
+import { allocateDispatch } from './orders'
+import { itemKey } from './itemName'
+describe('customer-wise dispatch (oldest order first)', () => {
+  const L = (product, qty, dispatched = 0, unit = 'Nos') => ({ product, finish: '', qty, unit, dispatched })
+  const A = { id: 'a', orderNo: 'UO-0025', orderDate: '2026-10-07', status: 'pending', items: [L('Vista', 170), L('Pushback', 600), L('Beeta Chrome', 300)] }
+  const B = { id: 'b', orderNo: 'UO-0047', orderDate: '2026-10-08', status: 'pending', items: [L('Pushback', 600), L('Beta chrome', 200)] }
+  it('fills the oldest order first and spills into the next', () => {
+    const r = allocateDispatch([B, A], itemKey('Pushback'), 'Nos', 700, 'manager')
+    expect(r.parts.map((p) => [p.orderNo, p.qty])).toEqual([['UO-0025', 600], ['UO-0047', 100]])
+    expect(r.patches.a.items[1].dispatched).toBe(600); expect(r.patches.b.items[0].dispatched).toBe(100)
+    expect(r.patches.a.items[0].dispatched).toBe(0); expect(r.patches.a.status).toBe('pending')
+    expect(r.patches.b.items[0].log.at(-1).qty).toBe(100)
+  })
+  it('touches only the first order when it is enough, and joins spellings (Beeta = Beta)', () => {
+    const r = allocateDispatch([A, B], itemKey('beta chrome'), 'Nos', 350, 'manager')
+    expect(Object.keys(r.patches)).toEqual(['a', 'b']); expect(r.parts.map((p) => p.qty)).toEqual([300, 50])
+    expect(Object.keys(allocateDispatch([A, B], itemKey('Pushback'), 'Nos', 10).patches)).toEqual(['a'])
+  })
+  it('refuses more than the customer total, a zero, and skips cancelled orders / other units', () => {
+    expect(() => allocateDispatch([A, B], itemKey('Pushback'), 'Nos', 1201)).toThrow(/Baaki sirf 1200 hai/)
+    expect(() => allocateDispatch([A, B], itemKey('Pushback'), 'Nos', 0)).toThrow(/Kitna gaya/)
+    expect(() => allocateDispatch([{ ...A, status: 'cancelled' }, B], itemKey('Pushback'), 'Nos', 601)).toThrow(/Baaki sirf 600 hai/)
+    expect(() => allocateDispatch([A, B], itemKey('Pushback'), 'kg', 1)).toThrow(/Baaki sirf 0 hai/)
+  })
+  it('closes an order when its last line is filled, and counts what already went', () => {
+    const one = { id: 'c', orderNo: 'UO-0001', orderDate: '2026-10-01', status: 'pending', items: [L('Tilting', 100, 40)] }
+    const r = allocateDispatch([one, { ...B, items: [L('Tilting', 50)] }], itemKey('Tilting'), 'Nos', 80)
+    expect(r.patches.c.status).toBe('dispatched'); expect(r.parts.map((p) => p.qty)).toEqual([60, 20])
+  })
+})

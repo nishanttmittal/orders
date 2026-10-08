@@ -23,6 +23,7 @@ export function LocalOrdersProvider({ children }) {
   const orders   = { ...base,
     insertSafe: async (rec) => ({ row: base.insert(rec), where: 'cloud' }),
     updateSafe: async (id, patch) => { base.update(id, patch); return 'cloud' },
+    changeMany: async (ids, fn) => { const patches = fn(base.list.filter((o) => ids.includes(o.id))); for (const [id, patch] of Object.entries(patches)) base.update(id, patch); return patches },
     change: async (id, fn) => { const cur = base.list.find((o) => o.id === id); if (!cur) throw new Error('Record nahi mila'); const patch = fn(cur); base.update(id, patch); return patch },
   }
   // local mode (no cloud): the "safe" writes are the plain ones
