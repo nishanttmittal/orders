@@ -33,18 +33,17 @@ export default function DayReport() {
   const { orders, logs, users } = useOrders()
   const L = useL()
   const [day, setDay] = useState(todayStr())
-  const [mine, setMine] = useState(false)   // false = everyone except the owner (what the owner wants to check)
+  const [mine, setMine] = useState(true)    // true (default) = show EVERY change; false = hide the ones recorded under the owner's login
 
   const ownerEmails = useMemo(() => [...OWNERS, ...(users?.list || []).filter((u) => u.role === 'owner' && u.active !== false).map((u) => (u.email || '').toLowerCase())], [users?.list])
   const isOwner = (l) => !!l.byEmail && ownerEmails.includes(l.byEmail)
-  // name of the person: from the signed-in email on the entry; for older entries that only carry a role label,
-  // the name of the (single) user with that role
+  // name of the person, from the signed-in email recorded on the entry
   const who = (l) => {
     const byMail = (users?.list || []).find((u) => (u.email || '').toLowerCase() === l.byEmail)?.name
     if (byMail) return byMail
     if (l.byEmail) return ownerEmails.includes(l.byEmail) ? 'Owner' : l.byEmail
-    const sameRole = (users?.list || []).filter((u) => u.role === l.by && u.active !== false)
-    return l.by === 'owner' ? 'Owner' : sameRole.length === 1 ? sameRole[0].name || sameRole[0].email : l.by || ''
+    // no email on the entry (older entries): say only what is recorded — the role label — never a person's name
+    return l.by ? `${l.by} login` : ''
   }
 
   // 2) dispatch of the day, from each line's own dispatch log
