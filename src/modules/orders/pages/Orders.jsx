@@ -53,14 +53,16 @@ export default function Orders({ owner = false, role = '' }) {
   // Anshul ji's phone can never overwrite each other. Nothing is shown as done until the cloud has it.
   const [working, setWorking] = useState(false)
   const run = async (o, fn, okMsg) => {
-    if (working) return
+    if (working) return false
     setWorking(true)
     try {
       const next = await orders.change(o.id, (latest) => ({ ...fn(latest), lastDispatchAt: new Date().toISOString() }))
       show(typeof okMsg === 'function' ? okMsg(next) : okMsg)
       setEntry(null)
+      return true    // the change is really saved
     } catch (e) {
       show(/Baaki sirf|Kitna gaya|nahi mil/.test(e?.message || '') ? e.message.replace(' (nahi mil)', '') : 'Save NAHI hua — internet dekh kar dobara karein', 4000)
+      return false   // nothing was saved: callers must not log it or close the form
     } finally { setWorking(false) }
   }
   const saveGaya = (o, i, amount) => {
@@ -68,17 +70,17 @@ export default function Orders({ owner = false, role = '' }) {
     if (!(add > 0)) return show('Kitna gaya? Number likhein', 2000)
     const it = o.items[i]
     run(o, (latest) => applyDispatch(latest, i, add, by), (next) => (next.status === 'dispatched' ? `${o.orderNo} poora gaya ✓` : `${qn(add)} gaya ✓`))
-      .then(() => log('DISPATCH', `${o.orderNo} · ${o.clientName} · ${it.product} +${add} ${lineUnit(it)}`, by, o.id))
+      .then((ok) => { if (ok) log('DISPATCH', `${o.orderNo} · ${o.clientName} · ${it.product} +${add} ${lineUnit(it)}`, by, o.id) })
   }
   const allGaya = (o) => {
     if (!confirm(`${o.clientName} ${o.orderNo}: poora order gaya?`)) return
-    run(o, (latest) => dispatchAll(latest, by), `${o.orderNo} poora gaya ✓`).then(() => log('DISPATCH_ALL', `${o.orderNo} · ${o.clientName}`, by, o.id))
+    run(o, (latest) => dispatchAll(latest, by), `${o.orderNo} poora gaya ✓`).then((ok) => { if (ok) log('DISPATCH_ALL', `${o.orderNo} · ${o.clientName}`, by, o.id) })
   }
   // Wrong tap: take back only the LAST entry on that line (earlier dispatches stay).
   const undoLine = (o, i) => {
     const last = (o.items[i].log || []).slice(-1)[0]
     if (!confirm(last ? `Aakhri entry (${qn(last.qty)}) galat thi? Hata dein?` : 'Is line ka "gaya" hata dein?')) return
-    run(o, (latest) => undoLastDispatch(latest, i), 'Entry hata di').then(() => log('DISPATCH_UNDO', `${o.orderNo} · ${o.clientName} · ${o.items[i].product} — ${last ? qn(last.qty) : qn(lineSent(o, o.items[i]))} ki entry wapas li`, by, o.id))
+    run(o, (latest) => undoLastDispatch(latest, i), 'Entry hata di').then((ok) => { if (ok) log('DISPATCH_UNDO', `${o.orderNo} · ${o.clientName} · ${o.items[i].product} — ${last ? qn(last.qty) : qn(lineSent(o, o.items[i]))} ki entry wapas li`, by, o.id) })
   }
   const setMoney = (o, patch) => orders.update(o.id, patch)
   // ── Correct a saved order (wrong customer / item / quantity) ──────────────────────────────────────────────
@@ -127,7 +129,7 @@ export default function Orders({ owner = false, role = '' }) {
         ...(posted ? { groupNotes: [...(latest.groupNotes || []), { id: `n${Date.now()}`, kind: 'EDIT', lines: items.map(groupLine), status: 'pending', at: new Date().toISOString(), by: email }], notePending: true } : {}),
         editedAt: new Date().toISOString(), editedBy: by,
       }
-    }, 'Order theek ho gaya ✓').then(() => { log('ORDER_EDIT', `${o.orderNo} · ${cn}\n${diff.join('\n')}`, by, o.id); setEdit(null) })
+    }, 'Order theek ho gaya ✓').then((ok) => { if (!ok) return; log('ORDER_EDIT', `${o.orderNo} · ${cn}\n${diff.join('\n')}`, by, o.id); setEdit(null) })
   }
   // Send the group line again after a failure / hold (owner or manager). The laptop job picks it up.
   const resend = (o) => {
