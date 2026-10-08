@@ -8,6 +8,7 @@ import { isOverdue } from './logic/orders'
 import NewOrder from './pages/NewOrder'
 import Orders from './pages/Orders'
 import Doubts from './pages/Doubts'
+import Changes from './pages/Changes'
 import Dashboard from './pages/Dashboard'
 import Admin from './pages/Admin'
 
@@ -33,6 +34,7 @@ export const ordersModule = {
     { key: 'doubts',    title: 'Doubt',      desc: 'Jo pakka nahi — clear karein', icon: '❓', color: 'from-amber-500 to-amber-600', roles: ['manager', 'owner'], Component: Doubts },
     // WhatsApp Inbox tile hidden 08-10-2026: orders found on WhatsApp are approved by the owner's reply and arrive
     // here already created, so a second review screen would only add a step. (pages/WhatsAppInbox.jsx is kept.)
+    { key: 'changes',   title: 'Badlav',     desc: 'Anshul ji ne kya badla — dekhein', icon: '🔎', color: 'from-sky-600 to-sky-700', roles: ['owner'], Component: Changes },
     { key: 'dashboard', title: 'Dashboard',  desc: 'Money & delivery view',     icon: '📊', color: 'from-emerald-600 to-emerald-700', roles: ['owner'], Component: Dashboard },
     { key: 'admin',     title: 'Admin',      desc: 'Products, clients, backup, users', icon: '⚙️', color: 'from-slate-600 to-slate-700', roles: ['owner'], Component: Admin },
   ],

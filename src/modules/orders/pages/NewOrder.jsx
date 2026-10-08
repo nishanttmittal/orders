@@ -59,11 +59,12 @@ export default function NewOrder({ owner = false, role = '' }) {
         mirror: { status: toGroup && trusted ? 'pending' : 'none' },
       })
       // only now is the order really stored (in the cloud, or on this phone waiting for the network)
-      if (!clients.list.some(c => c.name.toLowerCase() === cn.toLowerCase())) clients.insert({ name: cn })
+      const who = owner ? 'owner' : 'manager'
+      if (!clients.list.some(c => c.name.toLowerCase() === cn.toLowerCase())) { clients.insert({ name: cn }); log('ADD_CLIENT', cn, who) }
       for (const it of trusted ? cleanItems : []) {
-        if (!products.list.some(p => (p.name || '').toLowerCase() === it.product.toLowerCase())) products.insert({ name: it.product, order: 999 })
+        if (!products.list.some(p => (p.name || '').toLowerCase() === it.product.toLowerCase())) { products.insert({ name: it.product, order: 999, unit: it.unit }); log('ADD_PRODUCT', it.product, who) }
       }
-      log('ORDER', `${orderNo} · ${cn} · ${cleanItems.length} item(s)`, owner ? 'owner' : 'manager')
+      log('ORDER', `${orderNo} · ${cn}\n${cleanItems.map(it => `${it.product} ${it.qty} ${it.unit}`).join('\n')}`, who)
       show(where === 'cloud' ? (toGroup && trusted ? `${orderNo} save ✓ — order list me jayega` : `${orderNo} save ✓`) : `${orderNo} phone me save — net aate hi upar jayega`, 3000)
       setClientName(''); setItems([blank()]); setDeliveryDate(''); setRemarks(''); setPrice(''); setAdvance(''); setToGroup(true)
     } catch {

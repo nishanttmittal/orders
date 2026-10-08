@@ -78,7 +78,7 @@ export default function Orders({ owner = false, role = '' }) {
   const undoLine = (o, i) => {
     const last = (o.items[i].log || []).slice(-1)[0]
     if (!confirm(last ? `Aakhri entry (${qn(last.qty)}) galat thi? Hata dein?` : 'Is line ka "gaya" hata dein?')) return
-    run(o, (latest) => undoLastDispatch(latest, i), 'Entry hata di').then(() => log('DISPATCH_UNDO', `${o.orderNo} · ${o.items[i].product}`, by, o.id))
+    run(o, (latest) => undoLastDispatch(latest, i), 'Entry hata di').then(() => log('DISPATCH_UNDO', `${o.orderNo} · ${o.clientName} · ${o.items[i].product} — ${last ? qn(last.qty) : qn(lineSent(o, o.items[i]))} ki entry wapas li`, by, o.id))
   }
   const setMoney = (o, patch) => orders.update(o.id, patch)
   // ── Correct a saved order (wrong customer / item / quantity) ──────────────────────────────────────────────
@@ -92,6 +92,19 @@ export default function Orders({ owner = false, role = '' }) {
     if (used.some(r => !r.product.trim() || !(Number(r.qty) > 0))) return show('Har line me item aur quantity dono likhein', 2500)
     if (used.some(r => Number(r.qty) < r.sent)) return show('Quantity "gaya" se kam nahi ho sakti', 2500)
     if (!used.length) return show('Kam se kam ek item chahiye (poora hatana ho to Cancel Order)', 3000)
+    // Only the owner may remove a line. The manager can correct the name or quantity of a line, never drop it.
+    const removed = edit.rows.filter((r, i) => i < (o.items || []).length && !used.includes(r))
+    if (removed.length && !owner) return show('Line hata nahi sakte — naam ya quantity theek karein. Hatana sirf owner kar sakte hain.', 4000)
+    // what exactly changed, in plain words, for the owner's "Badlav" screen
+    const diff = []
+    if (cn !== o.clientName) diff.push(`Customer: ${o.clientName} → ${cn}`)
+    edit.rows.forEach((r, i) => {
+      const old = (o.items || [])[i]
+      if (old && !used.includes(r)) diff.push(`Hataya: ${old.product} ${old.qty}`)
+      else if (old && (r.product.trim() !== old.product || Number(r.qty) !== Number(old.qty))) diff.push(`${old.product} ${old.qty} → ${r.product.trim()} ${Number(r.qty)}`)
+      else if (!old && used.includes(r)) diff.push(`Joda: ${r.product.trim()} ${Number(r.qty)}`)
+    })
+    if (!diff.length) { setEdit(null); return show('Kuch badla nahi', 1500) }
     const email = (auth?.currentUser?.email || '').toLowerCase()
     run(o, (latest) => {
       // rows are matched to the latest lines by position; what has already gone on a line is always kept
@@ -108,7 +121,7 @@ export default function Orders({ owner = false, role = '' }) {
         ...(posted ? { groupNotes: [...(latest.groupNotes || []), { id: `n${Date.now()}`, kind: 'EDIT', lines: items.map(groupLine), status: 'pending', at: new Date().toISOString(), by: email }], notePending: true } : {}),
         editedAt: new Date().toISOString(), editedBy: by,
       }
-    }, 'Order theek ho gaya ✓').then(() => { log('ORDER_EDIT', `${o.orderNo} · ${o.clientName} → ${cn}`, by, o.id); setEdit(null) })
+    }, 'Order theek ho gaya ✓').then(() => { log('ORDER_EDIT', `${o.orderNo} · ${cn}\n${diff.join('\n')}`, by, o.id); setEdit(null) })
   }
   // Send the group line again after a failure / hold (owner or manager). The laptop job picks it up.
   const resend = (o) => {
@@ -211,7 +224,9 @@ export default function Orders({ owner = false, role = '' }) {
                             <div className="w-24 flex-shrink-0"><NumberInput inputMode="decimal" className="text-center !px-2 !py-2 !text-sm" value={r.qty} onChange={e => setEditRow(i, { qty: e.target.value })} placeholder="Qty" /></div>
                             {r.sent > 0
                               ? <span className="w-10 text-[10px] text-slate-400 text-center flex-shrink-0">gaya {qn(r.sent)}</span>
-                              : <button aria-label="Line hatao" onClick={() => setEdit({ ...edit, rows: edit.rows.map((x, idx) => idx === i ? { ...x, product: '', qty: '' } : x) })} className="w-10 h-9 rounded-xl bg-red-50 text-red-500 font-bold flex-shrink-0">✕</button>}
+                              : (owner || i >= (o.items || []).length)
+                                ? <button aria-label="Line hatao" onClick={() => setEdit({ ...edit, rows: edit.rows.map((x, idx) => idx === i ? { ...x, product: '', qty: '' } : x) })} className="w-10 h-9 rounded-xl bg-red-50 text-red-500 font-bold flex-shrink-0">✕</button>
+                                : <span className="w-10 flex-shrink-0" />}
                           </div>
                         ))}
                         <button onClick={() => setEdit({ ...edit, rows: [...edit.rows, { product: '', qty: '', sent: 0 }] })} className="text-xs font-bold text-slate-500 py-1">+ Aur item</button>
