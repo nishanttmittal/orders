@@ -14,7 +14,8 @@
     "export-review": "bash /home/nishel/unico-tools/export-review.sh",
     "gpt-review": "bash /home/nishel/unico-tools/gpt-review.sh",
     "deploy:gh": "gh-pages -d dist --dotfiles --nojekyll -r git@github.com:nishanttmittal/orders.git",
-    "deploy:hosting": "bash /home/nishel/unico-tools/deploy-hosting.sh orders"
+    "deploy:hosting": "bash /home/nishel/unico-tools/deploy-hosting.sh orders",
+    "test": "vitest run src"
   },
   "dependencies": {
     "firebase": "^12.14.0",
@@ -37,6 +38,7 @@
     "playwright": "^1.60.0",
     "tailwindcss": "^4.3.0",
     "vite": "^8.0.12",
-    "vite-plugin-pwa": "^1.3.0"
+    "vite-plugin-pwa": "^1.3.0",
+    "vitest": "^5.0.3"
   }
 }
