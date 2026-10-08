@@ -1,0 +1,76 @@
+    // ---- Orders (allowlist-locked: only Google users added in Admin → Users) ----
+    // TIGHTENED 2026-10-08 (owner: "anshul ji cannot delete anything only modify it and that modification will be
+    // available for me to check"; Day Report / Logs / Money are owner-only). What the rules now guarantee, whatever
+    // the app or anyone with a staff login tries:
+    //   • only the OWNER can delete anything, cancel an order, or change price / advance
+    //   • a manager can create orders (as himself, without money), correct them and mark dispatch, but can never
+    //     remove a line, change the order number or whose order it is
+    //   • customer / item names: staff may ADD, only the owner may change or delete
+    //   • the change log is write-once, stamped with the signer's own email, and readable by the owner only
+    //   • the order-number counter can only go up
+    // The laptop jobs use the Admin SDK and are not affected by these rules.
+    function oPath()  { return /databases/$(database)/documents/apps/orders/users/$(tEmail()); }
+    function oUser()  { return signedIn() && (bootstrapOwner() || (tEmail() != '' && exists(oPath()) && get(oPath()).data.active == true)); }
+    function oOwner() { return signedIn() && (bootstrapOwner() || (tEmail() != '' && exists(oPath()) && get(oPath()).data.active == true && get(oPath()).data.role == 'owner')); }
+    // manager or owner (the people who may post to the staff group and correct orders)
+    function oManager() { return signedIn() && (bootstrapOwner() || (tEmail() != '' && exists(oPath()) && get(oPath()).data.active == true && get(oPath()).data.role in ['owner', 'manager'])); }
+    function oUnchanged(keys) { return !request.resource.data.diff(resource.data).affectedKeys().hasAny(keys); }
+
+    // users allowlist: any signed-in device may READ (to resolve role at login); only owner WRITES
+    match /apps/orders/users/{id} { allow read: if nonAnon(); allow write: if oOwner(); }
+
+    match /apps/orders/orders/{id} {
+      allow read: if oUser();
+      // a new order is always stamped with the signer's own email; only the owner may enter money; only a manager /
+      // owner may ask for a line in the staff group
+      allow create: if oOwner()
+                    || (oUser()
+                        && request.resource.data.get('createdByEmail', '') == tEmail()
+                        && request.resource.data.get('price', 0) == 0 && request.resource.data.get('advance', 0) == 0
+                        && request.resource.data.get('status', 'pending') != 'cancelled'
+                        && (oManager() || request.resource.data.get('mirror', {}).get('status', 'none') == 'none'));
+      // manager: may correct an order and enter dispatch, but never touch identity or money, never cancel, and
+      // never end up with fewer lines than before
+      allow update: if oOwner()
+                    || (oManager()
+                        && oUnchanged(['orderNo', 'createdByEmail', 'createdBy', 'createdAt', 'price', 'advance', 'source', 'scanRef', 'scanKey', 'cancelledAt', 'cancelledBy', 'cancelReason', 'test'])
+                        && resource.data.get('status', 'pending') != 'cancelled'
+                        && request.resource.data.get('status', 'pending') != 'cancelled'
+                        && request.resource.data.items is list
+                        && request.resource.data.items.size() >= resource.data.get('items', []).size());
+      allow delete: if oOwner();
+    }
+
+    // customer and item names: staff add, only the owner changes or deletes
+    match /apps/orders/clients/{id}  { allow read: if oUser(); allow create: if oManager() && request.resource.data.name is string && request.resource.data.name.size() <= 80; allow update, delete: if oOwner(); }
+    match /apps/orders/products/{id} { allow read: if oUser(); allow create: if oManager() && request.resource.data.name is string && request.resource.data.name.size() <= 120; allow update, delete: if oOwner(); }
+
+    // change log: write-once, stamped with the signer's own email; only the owner reads it
+    match /apps/orders/logs/{id} {
+      allow read: if oOwner();
+      allow create: if oUser() && request.resource.data.get('byEmail', '') == tEmail()
+                    && request.resource.data.get('detail', '') is string && request.resource.data.get('detail', '').size() <= 2000;
+      allow update, delete: if false;
+    }
+
+    // doubts: written by the laptop job (Admin SDK); manager / owner settle them, nobody deletes
+    match /apps/orders/doubts/{id} {
+      allow read: if oManager();
+      allow create: if oOwner();
+      allow update: if oOwner() || (oManager() && oUnchanged(['customer', 'question', 'source', 'orderId', 'orderNo', 'createdAt', 'lines']));
+      allow delete: if oOwner();
+    }
+
+    // order-number counter: the number can only go up
+    match /apps/orders/meta/{id} {
+      allow read: if oUser();
+      allow create: if oUser() && id == 'counter' && request.resource.data.next is int && request.resource.data.next >= 2;
+      allow update: if oUser() && id == 'counter' && request.resource.data.next is int && request.resource.data.next > resource.data.next;
+      allow delete: if false;
+    }
+
+    // anything else under apps/orders (old WhatsApp inbox, future collections): owner only
+    match /apps/orders/{collection}/{docId} {
+      allow read, write: if oOwner() && !(collection in ['users', 'orders', 'clients', 'products', 'logs', 'doubts', 'meta']);
+    }
+    match /apps/orders { allow read: if oUser(); allow write: if oOwner(); }
