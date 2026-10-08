@@ -13,13 +13,15 @@ import { useOrders } from '../OrdersContext'
 import { auth } from '../../../core/db/firebase'
 import { groupLine } from '../logic/orders'
 import Suggest from '../Suggest'
+import { useL } from '../i18n'
 
 const inputCls = 'w-full border-2 border-slate-300 rounded-xl px-3 py-2.5 text-sm font-semibold focus:outline-none focus:ring-4 focus:ring-blue-200 focus:border-blue-500'
-const SRC = { kagaz: 'Kagaz list', whatsapp: 'WhatsApp' }
+const SRC = { kagaz: 'Paper list', whatsapp: 'WhatsApp' }
 
 export default function Doubts({ owner = false, role = '' }) {
   const { doubts, orders, clients, products, log, allocOrderNo } = useOrders()
   const { msg, show } = useToast()
+  const L = useL()
   const [openId, setOpenId] = useState(null)
   const [rows, setRows] = useState([])           // editable lines of the open card
   const [showDone, setShowDone] = useState(false)
@@ -56,11 +58,11 @@ export default function Doubts({ owner = false, role = '' }) {
   const addToOrder = async (d) => {
     if (busy) return
     const o = orders.list.find(x => x.id === d.orderId)
-    if (!o) return show('Order nahi mila', 2000)
-    if (o.status === 'cancelled') return show('Ye order cancel hai — naya order banana ho to New Order se banayein', 3500)
+    if (!o) return show(L('Order not found', 'Order nahi mila'), 2000)
+    if (o.status === 'cancelled') return show(L('This order is cancelled — to order again, use New Order', 'Ye order cancel hai — naya order banana ho to New Order se banayein'), 3500)
     const add = cleanRows()
-    if (add === null) return show('Har line me item aur quantity dono likhein', 2500)
-    if (!add.length) return show('Item aur quantity likhein', 2000)
+    if (add === null) return show(L('Every line needs both item and quantity', 'Har line me item aur quantity dono likhein'), 2500)
+    if (!add.length) return show(L('Enter item and quantity', 'Item aur quantity likhein'), 2000)
     setBusy(true)
     try {
       await orders.change(o.id, (latest) => {
@@ -73,21 +75,21 @@ export default function Doubts({ owner = false, role = '' }) {
       })
       log('ORDER_ADD_LINE', `${o.orderNo} · ${o.clientName} · ${add.map(a => `${a.product} ${a.qty}`).join(', ')}`, by, o.id)
       await clear(d, 'order me joda', { addedLines: add })   // the card is cleared only after the order really changed
-      show(`${o.orderNo} me jod diya ✓ — order list me bhi jayega`, 3000)
+      show(L(`Added to ${o.orderNo} ✓ — the order list will be told too`, `${o.orderNo} me jod diya ✓ — order list me bhi jayega`), 3000)
     } catch (e) {
-      show(e?.message === 'cancelled' ? 'Ye order cancel hai' : 'Jod NAHI paya — internet dekh kar dobara karein', 3500)
+      show(e?.message === 'cancelled' ? L('This order is cancelled', 'Ye order cancel hai') : L('NOT added — check the internet and try again', 'Jod NAHI paya — internet dekh kar dobara karein'), 3500)
     } finally { setBusy(false) }
   }
   // Make a new order from the typed lines (saved exactly like New Order, so its line goes to the order group).
   const makeOrder = async (d) => {
     if (busy) return
     const items = cleanRows()
-    if (items === null) return show('Har line me item aur quantity dono likhein', 2500)
-    if (!items.length) return show('Item aur quantity likhein', 2000)
+    if (items === null) return show(L('Every line needs both item and quantity', 'Har line me item aur quantity dono likhein'), 2500)
+    if (!items.length) return show(L('Enter item and quantity', 'Item aur quantity likhein'), 2000)
     setBusy(true)
     try {
       let orderNo
-      try { orderNo = await allocOrderNo() } catch { show('Internet nahi mila — order number nahi bana. Dobara dabayein.', 4000); return }
+      try { orderNo = await allocOrderNo() } catch { show(L('No internet — order number not created. Tap again.', 'Internet nahi mila — order number nahi bana. Dobara dabayein.'), 4000); return }
       const cn = (d.customer || '').trim()
       const { row } = await orders.insertSafe({
         orderNo, orderDate: todayStr(), clientName: cn, deliveryDate: '', items, transport: '', remarks: `Doubt se bana${d.source ? ' (' + (SRC[d.source] || d.source) + ')' : ''}`,
@@ -96,9 +98,9 @@ export default function Doubts({ owner = false, role = '' }) {
       if (cn && !clients.list.some(c => (c.name || '').toLowerCase() === cn.toLowerCase())) clients.insert({ name: cn })
       log('ORDER', `${orderNo} · ${cn} · doubt se`, by)
       await clear(d, 'order bana', { newOrderId: row?.id || '', newOrderNo: orderNo })
-      show(`${orderNo} ban gaya ✓ — order list me jayega`, 2500)
+      show(L(`${orderNo} created ✓ — going to the order list`, `${orderNo} ban gaya ✓ — order list me jayega`), 2500)
     } catch {
-      show('Save NAHI hua — dobara try karein', 3000)
+      show(L('NOT saved — try again', 'Save NAHI hua — dobara try karein'), 3000)
     } finally { setBusy(false) }
   }
 
@@ -106,11 +108,11 @@ export default function Doubts({ owner = false, role = '' }) {
     <div className="max-w-lg mx-auto p-4 space-y-3">
       <Toast msg={msg} />
       <div className="flex gap-2">
-        <button onClick={() => { setShowDone(false); setOpenId(null) }} className={`flex-1 py-2.5 rounded-xl text-sm font-bold ${!showDone ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-600'}`}>Clear karna hai ({openCount})</button>
-        <button onClick={() => { setShowDone(true); setOpenId(null) }} className={`flex-1 py-2.5 rounded-xl text-sm font-bold ${showDone ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Ho gaye</button>
+        <button onClick={() => { setShowDone(false); setOpenId(null) }} className={`flex-1 py-2.5 rounded-xl text-sm font-bold ${!showDone ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-600'}`}>{L('To settle', 'Clear karna hai')} ({openCount})</button>
+        <button onClick={() => { setShowDone(true); setOpenId(null) }} className={`flex-1 py-2.5 rounded-xl text-sm font-bold ${showDone ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>{L('Done', 'Ho gaye')}</button>
       </div>
 
-      {list.length === 0 && <Card className="p-8 text-center text-slate-400">{showDone ? 'Abhi kuch nahi.' : 'Koi doubt nahi 👍'}</Card>}
+      {list.length === 0 && <Card className="p-8 text-center text-slate-400">{showDone ? L('Nothing yet.', 'Abhi kuch nahi.') : L('No doubts 👍', 'Koi doubt nahi 👍')}</Card>}
 
       {list.map(d => {
         const isOpen = openId === d.id
@@ -128,19 +130,19 @@ export default function Doubts({ owner = false, role = '' }) {
 
             {isOpen && d.status !== 'cleared' && (
               <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
-                {linked && <div className="text-xs text-slate-500">Is order me abhi: {(linked.items || []).map(it => `${it.product} ${it.qty}`).join(' · ')}{linked.status === 'cancelled' ? ' — ORDER CANCEL HAI' : ''}</div>}
+                {linked && <div className="text-xs text-slate-500">{L('In this order now:', 'Is order me abhi:')} {(linked.items || []).map(it => `${it.product} ${it.qty}`).join(' · ')}{linked.status === 'cancelled' ? L(' — ORDER IS CANCELLED', ' — ORDER CANCEL HAI') : ''}</div>}
                 {rows.map((r, i) => (
                   <div key={i} className="flex gap-1.5 items-center">
                     <div className="flex-1 min-w-0"><Suggest className={inputCls} placeholder="Item" value={r.product} onChange={v => setRow(i, { product: v })} onPick={p => setRow(i, { product: p.name, unit: p.unit || r.unit || 'Nos' })} options={products.list} /></div>
                     <div className="w-24 flex-shrink-0"><NumberInput inputMode="decimal" className="text-center !px-2 !py-2.5 !text-sm" placeholder="Qty" value={r.qty} onChange={e => setRow(i, { qty: e.target.value })} /></div>
                   </div>
                 ))}
-                <button onClick={() => setRows([...rows, { product: '', qty: '', unit: 'Nos' }])} className="text-xs font-bold text-slate-500">+ Aur item</button>
+                <button onClick={() => setRows([...rows, { product: '', qty: '', unit: 'Nos' }])} className="text-xs font-bold text-slate-500">{L('+ Add item', '+ Aur item')}</button>
                 <div className="grid grid-cols-2 gap-2 pt-1">
                   {linked
-                    ? <Button variant="primary" disabled={busy || linked.status === 'cancelled'} onClick={() => addToOrder(d)}>{linked.orderNo} me jodo</Button>
-                    : <Button variant="primary" disabled={busy} onClick={() => makeOrder(d)}>Order banao</Button>}
-                  <Button variant="neutral" onClick={() => clear(d, linked ? 'kuch nahi jodna' : 'order nahi hai')}>{linked ? 'Jodna nahi hai' : 'Order nahi hai'}</Button>
+                    ? <Button variant="primary" disabled={busy || linked.status === 'cancelled'} onClick={() => addToOrder(d)}>{L(`Add to ${linked.orderNo}`, `${linked.orderNo} me jodo`)}</Button>
+                    : <Button variant="primary" disabled={busy} onClick={() => makeOrder(d)}>{L('Make order', 'Order banao')}</Button>}
+                  <Button variant="neutral" onClick={() => clear(d, linked ? 'kuch nahi jodna' : 'order nahi hai')}>{linked ? L('Nothing to add', 'Jodna nahi hai') : L('Not an order', 'Order nahi hai')}</Button>
                 </div>
               </div>
             )}

@@ -5,6 +5,7 @@
  * beeta/bita = beta, crome = chrome, pc = powder). Free typing is always allowed: a new name is simply kept.
  */
 import { useMemo, useState } from 'react'
+import { useL } from './i18n'
 
 const SYN = [
   [/\bt\.?m\b|\btil\s*til\b|\btelting\b|\btitling\b/g, 'tilting'], [/\bp\.?m\b|\bp\.?b\b|\bpush\s*back\b|\bpushbek\b/g, 'pushback'],
@@ -16,6 +17,7 @@ const norm = (t) => { let x = ' ' + String(t || '').toLowerCase().replace(/[()"'
 export default function Suggest({ value, onChange, onPick, options = [], placeholder = '', className = '' }) {
   const max = 80   // the list scrolls, so show every match (up to 80), not only the first few
   const [open, setOpen] = useState(false)
+  const L = useL()
   const indexed = useMemo(() => options.map((o) => ({ o, key: norm(o.name) })), [options])
   const matches = useMemo(() => {
     const q = norm(value).split(' ').filter(Boolean)
@@ -43,7 +45,7 @@ export default function Suggest({ value, onChange, onPick, options = [], placeho
             ))}
           </div>
           <div className="px-4 py-1.5 text-[11px] text-slate-400 bg-slate-50 border-t border-slate-100">
-            {matches.length > max ? `${max} dikh rahe hain, ${matches.length - max} aur — thoda aur likhein` : matches.length > 5 ? `${matches.length} mile — neeche scroll karein` : `${matches.length} mile`}
+            {matches.length > max ? L(`Showing ${max}, ${matches.length - max} more — type a little more`, `${max} dikh rahe hain, ${matches.length - max} aur — thoda aur likhein`) : matches.length > 5 ? L(`${matches.length} found — scroll down`, `${matches.length} mile — neeche scroll karein`) : L(`${matches.length} found`, `${matches.length} mile`)}
           </div>
         </div>
       )}

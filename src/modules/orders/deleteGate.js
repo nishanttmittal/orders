@@ -7,6 +7,8 @@
  * What it is not: real protection against someone technical. The check runs on the phone; the lasting protection
  * is the Firestore rule (only the owner's login may delete), which is the next step to add.
  */
+import { tr } from './i18n'
+
 const DELETE_HASH = '5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8'
 
 async function sha256(text) {
@@ -16,9 +18,9 @@ async function sha256(text) {
 
 /** Ask for the delete password. Resolves true only if it is right; says so if it is wrong. */
 export async function askDeletePassword(what = '') {
-  const typed = window.prompt(`${what ? what + '\n\n' : ''}Delete password likhein:`)
+  const typed = window.prompt(`${what ? what + '\n\n' : ''}${tr('Enter the delete password:', 'Delete password likhein:')}`)
   if (typed === null) return false
   const ok = await sha256(typed.trim()).then((h) => h === DELETE_HASH).catch(() => false)
-  if (!ok) window.alert('Password galat hai — kuch delete nahi hua.')
+  if (!ok) window.alert(tr('Wrong password — nothing was deleted.', 'Password galat hai — kuch delete nahi hua.'))
   return ok
 }

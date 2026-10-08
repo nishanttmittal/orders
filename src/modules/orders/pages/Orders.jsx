@@ -12,15 +12,16 @@ import { duplicateOrderNos } from '../orderNo'
 import { auth } from '../../../core/db/firebase'
 import Suggest from '../Suggest'
 import { askDeletePassword } from '../deleteGate'
+import { useL } from '../i18n'
 
 // What happened to this order's line in the staff order group. `retry` = offer the "Ab bhejo" button.
 const MIRROR = {
-  pending:   { text: 'Order list me jayega (laptop on hote hi)', cls: 'text-amber-600' },
-  queued:    { text: 'Order list me ja raha hai…', cls: 'text-amber-600' },
-  sent:      { text: 'Order list me likh diya ✓', cls: 'text-emerald-600' },
-  held:      { text: 'Order list me NAHI gaya', cls: 'text-red-600', retry: true },
-  failed:    { text: 'Order list me NAHI gaya', cls: 'text-red-600', retry: true },
-  uncertain: { text: 'Order list me gaya ya nahi — group me dekh lein', cls: 'text-amber-700', retry: true },
+  pending:   { text: ['Will go to the order list (when the laptop is on)', 'Order list me jayega (laptop on hote hi)'], cls: 'text-amber-600' },
+  queued:    { text: ['Going to the order list…', 'Order list me ja raha hai…'], cls: 'text-amber-600' },
+  sent:      { text: ['Posted in the order list ✓', 'Order list me likh diya ✓'], cls: 'text-emerald-600' },
+  held:      { text: ['NOT posted in the order list', 'Order list me NAHI gaya'], cls: 'text-red-600', retry: true },
+  failed:    { text: ['NOT posted in the order list', 'Order list me NAHI gaya'], cls: 'text-red-600', retry: true },
+  uncertain: { text: ['Not sure it reached the order list — check the group', 'Order list me gaya ya nahi — group me dekh lein'], cls: 'text-amber-700', retry: true },
 }
 // 320 -> "320", 2.5 -> "2.5" (kg lines): never round a real balance down to 0
 const qn = (n) => (Number.isInteger(Number(n)) ? fmtNum(n) : String(Math.round(Number(n) * 100) / 100))
@@ -29,6 +30,7 @@ export default function Orders({ owner = false, role = '' }) {
   const canPost = owner || role === 'manager'
   const { orders, products, log } = useOrders()
   const { msg, show } = useToast()
+  const L = useL()
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState('open')
   const [openId, setOpenId] = useState(null)
@@ -61,26 +63,26 @@ export default function Orders({ owner = false, role = '' }) {
       setEntry(null)
       return true    // the change is really saved
     } catch (e) {
-      show(/Baaki sirf|Kitna gaya|nahi mil/.test(e?.message || '') ? e.message.replace(' (nahi mil)', '') : 'Save NAHI hua — internet dekh kar dobara karein', 4000)
+      show(/Baaki sirf|Kitna gaya|nahi mil/.test(e?.message || '') ? e.message.replace(' (nahi mil)', '') : L('NOT saved — check the internet and try again', 'Save NAHI hua — internet dekh kar dobara karein'), 4000)
       return false   // nothing was saved: callers must not log it or close the form
     } finally { setWorking(false) }
   }
   const saveGaya = (o, i, amount) => {
     const add = Number(amount ?? entry?.value)
-    if (!(add > 0)) return show('Kitna gaya? Number likhein', 2000)
+    if (!(add > 0)) return show(L('How much went? Enter a number', 'Kitna gaya? Number likhein'), 2000)
     const it = o.items[i]
-    run(o, (latest) => applyDispatch(latest, i, add, by), (next) => (next.status === 'dispatched' ? `${o.orderNo} poora gaya ✓` : `${qn(add)} gaya ✓`))
+    run(o, (latest) => applyDispatch(latest, i, add, by), (next) => (next.status === 'dispatched' ? L(`${o.orderNo} fully dispatched ✓`, `${o.orderNo} poora gaya ✓`) : L(`${qn(add)} dispatched ✓`, `${qn(add)} gaya ✓`)))
       .then((ok) => { if (ok) log('DISPATCH', `${o.orderNo} · ${o.clientName} · ${it.product} +${add} ${lineUnit(it)}`, by, o.id) })
   }
   const allGaya = (o) => {
-    if (!confirm(`${o.clientName} ${o.orderNo}: poora order gaya?`)) return
-    run(o, (latest) => dispatchAll(latest, by), `${o.orderNo} poora gaya ✓`).then((ok) => { if (ok) log('DISPATCH_ALL', `${o.orderNo} · ${o.clientName}`, by, o.id) })
+    if (!confirm(L(`${o.clientName} ${o.orderNo}: whole order dispatched?`, `${o.clientName} ${o.orderNo}: poora order gaya?`))) return
+    run(o, (latest) => dispatchAll(latest, by), L(`${o.orderNo} fully dispatched ✓`, `${o.orderNo} poora gaya ✓`)).then((ok) => { if (ok) log('DISPATCH_ALL', `${o.orderNo} · ${o.clientName}`, by, o.id) })
   }
   // Wrong tap: take back only the LAST entry on that line (earlier dispatches stay).
   const undoLine = (o, i) => {
     const last = (o.items[i].log || []).slice(-1)[0]
-    if (!confirm(last ? `Aakhri entry (${qn(last.qty)}) galat thi? Hata dein?` : 'Is line ka "gaya" hata dein?')) return
-    run(o, (latest) => undoLastDispatch(latest, i), 'Entry hata di').then((ok) => { if (ok) log('DISPATCH_UNDO', `${o.orderNo} · ${o.clientName} · ${o.items[i].product} — ${last ? qn(last.qty) : qn(lineSent(o, o.items[i]))} ki entry wapas li`, by, o.id) })
+    if (!confirm(last ? L(`Was the last entry (${qn(last.qty)}) wrong? Take it back?`, `Aakhri entry (${qn(last.qty)}) galat thi? Hata dein?`) : L('Clear the dispatched quantity of this line?', 'Is line ka "gaya" hata dein?'))) return
+    run(o, (latest) => undoLastDispatch(latest, i), L('Entry taken back', 'Entry hata di')).then((ok) => { if (ok) log('DISPATCH_UNDO', `${o.orderNo} · ${o.clientName} · ${o.items[i].product} — ${last ? qn(last.qty) : qn(lineSent(o, o.items[i]))} ki entry wapas li`, by, o.id) })
   }
   const setMoney = (o, patch) => orders.update(o.id, patch)
   // ── Correct a saved order (wrong customer / item / quantity) ──────────────────────────────────────────────
@@ -89,14 +91,14 @@ export default function Orders({ owner = false, role = '' }) {
   const setEditRow = (i, patch) => setEdit({ ...edit, rows: edit.rows.map((r, idx) => idx === i ? { ...r, ...patch } : r) })
   const saveEdit = (o) => {
     const cn = edit.client.trim()
-    if (!cn) return show('Customer ka naam likhein', 2000)
+    if (!cn) return show(L('Enter the customer name', 'Customer ka naam likhein'), 2000)
     const used = edit.rows.filter(r => r.product.trim() || String(r.qty).trim() || r.sent > 0)
-    if (used.some(r => !r.product.trim() || !(Number(r.qty) > 0))) return show('Har line me item aur quantity dono likhein', 2500)
-    if (used.some(r => Number(r.qty) < r.sent)) return show('Quantity "gaya" se kam nahi ho sakti', 2500)
-    if (!used.length) return show('Kam se kam ek item chahiye (poora hatana ho to Cancel Order)', 3000)
+    if (used.some(r => !r.product.trim() || !(Number(r.qty) > 0))) return show(L('Every line needs both item and quantity', 'Har line me item aur quantity dono likhein'), 2500)
+    if (used.some(r => Number(r.qty) < r.sent)) return show(L('Quantity cannot be less than what has already gone', 'Quantity "gaya" se kam nahi ho sakti'), 2500)
+    if (!used.length) return show(L('At least one item is needed (to remove everything, use Cancel Order)', 'Kam se kam ek item chahiye (poora hatana ho to Cancel Order)'), 3000)
     // Only the owner may remove a line. The manager can correct the name or quantity of a line, never drop it.
     const removed = edit.rows.filter((r, i) => i < (o.items || []).length && !used.includes(r))
-    if (removed.length && !owner) return show('Line hata nahi sakte — naam ya quantity theek karein. Hatana sirf owner kar sakte hain.', 4000)
+    if (removed.length && !owner) return show(L('You cannot remove a line — correct the name or quantity. Only the owner can remove.', 'Line hata nahi sakte — naam ya quantity theek karein. Hatana sirf owner kar sakte hain.'), 4000)
     // what exactly changed, in plain words, for the owner's "Badlav" screen
     const diff = []
     if (cn !== o.clientName) diff.push(`Customer: ${o.clientName} → ${cn}`)
@@ -106,7 +108,7 @@ export default function Orders({ owner = false, role = '' }) {
       else if (old && (r.product.trim() !== old.product || Number(r.qty) !== Number(old.qty))) diff.push(`${old.product} ${old.qty} → ${r.product.trim()} ${Number(r.qty)}`)
       else if (!old && used.includes(r)) diff.push(`Joda: ${r.product.trim()} ${Number(r.qty)}`)
     })
-    if (!diff.length) { setEdit(null); return show('Kuch badla nahi', 1500) }
+    if (!diff.length) { setEdit(null); return show(L('Nothing changed', 'Kuch badla nahi'), 1500) }
     const email = (auth?.currentUser?.email || '').toLowerCase()
     const startCount = (o.items || []).length
     run(o, (latest) => {
@@ -129,18 +131,18 @@ export default function Orders({ owner = false, role = '' }) {
         ...(posted ? { groupNotes: [...(latest.groupNotes || []), { id: `n${Date.now()}`, kind: 'EDIT', lines: items.map(groupLine), status: 'pending', at: new Date().toISOString(), by: email }], notePending: true } : {}),
         editedAt: new Date().toISOString(), editedBy: by,
       }
-    }, 'Order theek ho gaya ✓').then((ok) => { if (!ok) return; log('ORDER_EDIT', `${o.orderNo} · ${cn}\n${diff.join('\n')}`, by, o.id); setEdit(null) })
+    }, L('Order corrected ✓', 'Order theek ho gaya ✓')).then((ok) => { if (!ok) return; log('ORDER_EDIT', `${o.orderNo} · ${cn}\n${diff.join('\n')}`, by, o.id); setEdit(null) })
   }
   // Send the group line again after a failure / hold (owner or manager). The laptop job picks it up.
   const resend = (o) => {
     orders.update(o.id, { mirror: { status: 'pending', retry: (Number(o.mirror?.retry) || 0) + 1 } })
     log('GROUP_RESEND', `${o.orderNo} · ${o.clientName}`, by, o.id)
-    show('Dobara bheja ja raha hai')
+    show(L('Sending again', 'Dobara bheja ja raha hai'))
   }
   // Cancel (not hard delete): keep the record + number permanently, mark cancelled.
   const cancelOrder = async (o) => {
     if (o.status === 'cancelled') return
-    if (!(await askDeletePassword(`Order ${o.orderNo} (${o.clientName}) cancel karna hai?`))) return
+    if (!(await askDeletePassword(L(`Cancel order ${o.orderNo} (${o.clientName})?`, `Order ${o.orderNo} (${o.clientName}) cancel karna hai?`)))) return
     const reason = prompt(`Cancel order ${o.orderNo} (${o.clientName})?\nOrder rakha jayega, number dobara use nahi hoga. Reason (optional):`)
     if (reason === null) return
     orders.update(o.id, { status: 'cancelled', cancelledAt: new Date().toISOString(), cancelledBy: 'owner', cancelReason: (reason || '').trim() })
@@ -158,20 +160,20 @@ export default function Orders({ owner = false, role = '' }) {
 
       {overdue.length > 0 && (
         <Card className="p-4 border border-red-200 bg-red-50">
-          <div className="text-sm font-bold text-red-700">⏰ {overdue.length} order late: {overdue.slice(0, 3).map(o => o.clientName).join(', ')}{overdue.length > 3 ? '…' : ''}</div>
+          <div className="text-sm font-bold text-red-700">⏰ {overdue.length} {L('orders late:', 'order late:')} {overdue.slice(0, 3).map(o => o.clientName).join(', ')}{overdue.length > 3 ? '…' : ''}</div>
         </Card>
       )}
       {dupNos.size > 0 && (
         <Card className="p-4 border border-rose-300 bg-rose-50">
-          <div className="text-sm font-semibold text-rose-700">⚠ Order number do baar: {[...dupNos].join(', ')}</div>
+          <div className="text-sm font-semibold text-rose-700">⚠ {L('Order number used twice:', 'Order number do baar:')} {[...dupNos].join(', ')}</div>
         </Card>
       )}
 
-      <div className="flex gap-2">{chip('open', 'Baaki')}{chip('done', 'Poora gaya')}{chip('all', 'Sab')}</div>
-      <SearchBar value={q} onChange={setQ} placeholder="Customer, item ya order no…" />
+      <div className="flex gap-2">{chip('open', L('Pending', 'Baaki'))}{chip('done', L('Dispatched', 'Poora gaya'))}{chip('all', L('All', 'Sab'))}</div>
+      <SearchBar value={q} onChange={setQ} placeholder={L('Customer, item or order no…', 'Customer, item ya order no…')} />
 
       {list.length === 0 ? (
-        <Card className="p-8 text-center text-slate-400">{filter === 'open' ? 'Koi order baaki nahi.' : 'Koi order nahi.'}</Card>
+        <Card className="p-8 text-center text-slate-400">{filter === 'open' ? L('No pending orders.', 'Koi order baaki nahi.') : L('No orders.', 'Koi order nahi.')}</Card>
       ) : (
         <div className="space-y-2">
           {list.map(o => {
@@ -183,14 +185,14 @@ export default function Orders({ owner = false, role = '' }) {
                   <div className="min-w-0">
                     <div className="font-bold text-slate-800 truncate">{o.clientName} <span className="text-xs text-slate-400 font-normal">{o.orderNo}</span></div>
                     <div className="text-xs text-slate-500 mt-0.5 line-clamp-2">{(o.items || []).filter(it => filter !== 'open' || lineBalance(o, it) > 0).map(it => `${it.product}${it.finish && !it.product.toLowerCase().includes(it.finish.toLowerCase()) ? ' ' + it.finish : ''} ${qn(filter === 'open' ? lineBalance(o, it) : it.qty)}`).join(' · ')}</div>
-                    {['held', 'failed', 'uncertain'].includes(o.mirror?.status) && o.status !== 'cancelled' && <div className="text-[11px] font-bold text-red-600 mt-0.5">⚠ Order list me nahi gaya — kholein</div>}
-                    <div className="text-[11px] text-slate-400 mt-0.5">{fmtDate(o.orderDate)}{o.deliveryDate ? ` · delivery ${fmtDate(o.deliveryDate)}` : ''}{isOverdue(o) ? ` · ${Math.abs(d)} din late` : ''}</div>
+                    {['held', 'failed', 'uncertain'].includes(o.mirror?.status) && o.status !== 'cancelled' && <div className="text-[11px] font-bold text-red-600 mt-0.5">{L('⚠ Not posted in the order list — open', '⚠ Order list me nahi gaya — kholein')}</div>}
+                    <div className="text-[11px] text-slate-400 mt-0.5">{fmtDate(o.orderDate)}{o.deliveryDate ? ` · delivery ${fmtDate(o.deliveryDate)}` : ''}{isOverdue(o) ? L(` · ${Math.abs(d)} days late`, ` · ${Math.abs(d)} din late`) : ''}</div>
                   </div>
                   {o.status === 'cancelled'
-                    ? <span className="text-[11px] font-bold px-2 py-1 rounded-lg bg-rose-100 text-rose-700 flex-shrink-0">Cancel</span>
+                    ? <span className="text-[11px] font-bold px-2 py-1 rounded-lg bg-rose-100 text-rose-700 flex-shrink-0">{L('Cancelled', 'Cancel')}</span>
                     : left === 0
-                      ? <span className="text-[11px] font-bold px-2 py-1 rounded-lg bg-emerald-100 text-emerald-700 flex-shrink-0">Gaya ✓</span>
-                      : <span className="text-[11px] font-bold px-2 py-1 rounded-lg bg-amber-100 text-amber-700 flex-shrink-0 text-right">{orderUnit(o) ? `Baaki ${qn(left)}${left !== total ? ` / ${qn(total)}` : ''} ${orderUnit(o)}` : `${linesLeft(o)} item baaki`}</span>}
+                      ? <span className="text-[11px] font-bold px-2 py-1 rounded-lg bg-emerald-100 text-emerald-700 flex-shrink-0">{L('Dispatched ✓', 'Gaya ✓')}</span>
+                      : <span className="text-[11px] font-bold px-2 py-1 rounded-lg bg-amber-100 text-amber-700 flex-shrink-0 text-right">{orderUnit(o) ? `${L('Pending', 'Baaki')} ${qn(left)}${left !== total ? ` / ${qn(total)}` : ''} ${orderUnit(o)}` : L(`${linesLeft(o)} items pending`, `${linesLeft(o)} item baaki`)}</span>}
                 </div>
 
                 {open && (
@@ -204,19 +206,19 @@ export default function Orders({ owner = false, role = '' }) {
                             <span className="font-bold text-slate-700 flex-shrink-0">{qn(it.qty)} {lineUnit(it)}</span>
                           </div>
                           <div className="flex items-center justify-between gap-2 mt-1.5">
-                            <span className="text-xs text-slate-500">Gaya {qn(sent)} · <b className={bal ? 'text-amber-700' : 'text-emerald-700'}>Baaki {qn(bal)}</b>{sent > 0 && o.status !== 'cancelled' && <button onClick={() => undoLine(o, i)} className="ml-2 underline text-slate-400">Galat entry?</button>}</span>
+                            <span className="text-xs text-slate-500">{L('Sent', 'Gaya')} {qn(sent)} · <b className={bal ? 'text-amber-700' : 'text-emerald-700'}>{L('Pending', 'Baaki')} {qn(bal)}</b>{sent > 0 && o.status !== 'cancelled' && <button onClick={() => undoLine(o, i)} className="ml-2 underline text-slate-400">{L('Wrong entry?', 'Galat entry?')}</button>}</span>
                             {o.status !== 'cancelled' && bal > 0 && !editing && (
-                              <button onClick={() => setEntry({ id: o.id, line: i, value: '' })} className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold">Maal gaya</button>
+                              <button onClick={() => setEntry({ id: o.id, line: i, value: '' })} className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold">{L('Dispatched', 'Maal gaya')}</button>
                             )}
                           </div>
                           {editing && (
                             <div className="mt-2 space-y-2">
                               <div className="flex gap-2 items-center">
-                                <NumberInput autoFocus inputMode="decimal" className="flex-1 text-center !py-2" placeholder="Abhi kitna gaya?" value={entry.value} onChange={e => setEntry({ ...entry, value: e.target.value })} />
+                                <NumberInput autoFocus inputMode="decimal" className="flex-1 text-center !py-2" placeholder={L('How much went now?', 'Abhi kitna gaya?')} value={entry.value} onChange={e => setEntry({ ...entry, value: e.target.value })} />
                                 <Button size="sm" variant="primary" disabled={working} onClick={() => saveGaya(o, i)}>OK</Button>
                                 <Button size="sm" variant="neutral" onClick={() => setEntry(null)}>✕</Button>
                               </div>
-                              <button disabled={working} onClick={() => saveGaya(o, i, bal)} className="w-full py-2 rounded-xl bg-emerald-50 text-emerald-700 text-sm font-bold">Poora baaki gaya ({qn(bal)})</button>
+                              <button disabled={working} onClick={() => saveGaya(o, i, bal)} className="w-full py-2 rounded-xl bg-emerald-50 text-emerald-700 text-sm font-bold">{L('All pending went', 'Poora baaki gaya')} ({qn(bal)})</button>
                             </div>
                           )}
                         </div>
@@ -231,33 +233,33 @@ export default function Orders({ owner = false, role = '' }) {
                             <div className="flex-1 min-w-0"><Suggest className="w-full border-2 border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold" value={r.product} onChange={v => setEditRow(i, { product: v })} options={products.list} placeholder="Item" /></div>
                             <div className="w-24 flex-shrink-0"><NumberInput inputMode="decimal" className="text-center !px-2 !py-2 !text-sm" value={r.qty} onChange={e => setEditRow(i, { qty: e.target.value })} placeholder="Qty" /></div>
                             {r.sent > 0
-                              ? <span className="w-10 text-[10px] text-slate-400 text-center flex-shrink-0">gaya {qn(r.sent)}</span>
+                              ? <span className="w-10 text-[10px] text-slate-400 text-center flex-shrink-0">{L('sent', 'gaya')} {qn(r.sent)}</span>
                               : (owner || i >= (o.items || []).length)
                                 ? <button aria-label="Line hatao" onClick={() => setEdit({ ...edit, rows: edit.rows.map((x, idx) => idx === i ? { ...x, product: '', qty: '' } : x) })} className="w-10 h-9 rounded-xl bg-red-50 text-red-500 font-bold flex-shrink-0">✕</button>
                                 : <span className="w-10 flex-shrink-0" />}
                           </div>
                         ))}
-                        <button onClick={() => setEdit({ ...edit, rows: [...edit.rows, { product: '', qty: '', sent: 0 }] })} className="text-xs font-bold text-slate-500 py-1">+ Aur item</button>
+                        <button onClick={() => setEdit({ ...edit, rows: [...edit.rows, { product: '', qty: '', sent: 0 }] })} className="text-xs font-bold text-slate-500 py-1">{L('+ Add item', '+ Aur item')}</button>
                         <div className="grid grid-cols-2 gap-2">
                           <Button variant="primary" disabled={working} onClick={() => saveEdit(o)}>Save</Button>
-                          <Button variant="neutral" onClick={() => setEdit(null)}>Chhodo</Button>
+                          <Button variant="neutral" onClick={() => setEdit(null)}>{L('Close', 'Chhodo')}</Button>
                         </div>
                       </div>
                     )}
                     {canPost && o.status !== 'cancelled' && !(edit && edit.id === o.id) && (
-                      <button onClick={() => startEdit(o)} className="text-xs font-bold text-blue-600">✎ Order theek karein (naam / item / quantity)</button>
+                      <button onClick={() => startEdit(o)} className="text-xs font-bold text-blue-600">{L('✎ Correct this order (name / item / quantity)', '✎ Order theek karein (naam / item / quantity)')}</button>
                     )}
                     {(o.groupNotes || []).filter(n => n.status !== 'sent').slice(-1).map(n => (
-                      <div key={n.id} className={`text-xs font-semibold ${n.status === 'held' || n.status === 'failed' ? 'text-red-600' : 'text-amber-600'}`}>{n.kind === 'ADD' ? 'Naya item' : 'Badlav'}: {n.status === 'held' || n.status === 'failed' ? `order list me NAHI gaya${n.why ? ' — ' + n.why : ''}` : 'order list me ja raha hai…'}</div>
+                      <div key={n.id} className={`text-xs font-semibold ${n.status === 'held' || n.status === 'failed' ? 'text-red-600' : 'text-amber-600'}`}>{n.kind === 'ADD' ? L('Added item', 'Naya item') : L('Correction', 'Badlav')}: {n.status === 'held' || n.status === 'failed' ? `${L('NOT posted in the order list', 'order list me NAHI gaya')}${n.why ? ' — ' + n.why : ''}` : L('going to the order list…', 'order list me ja raha hai…')}</div>
                     ))}
                     {o.status !== 'cancelled' && left > 0 && (o.items || []).length > 1 && (
-                      <Button variant="neutral" className="w-full" onClick={() => allGaya(o)}>Poora order gaya</Button>
+                      <Button variant="neutral" className="w-full" onClick={() => allGaya(o)}>{L('Whole order dispatched', 'Poora order gaya')}</Button>
                     )}
 
                     {m && (
                       <div className="flex items-center justify-between gap-2">
-                        <div className={`text-xs font-semibold ${m.cls}`}>{m.text}{o.mirror?.why ? ` — ${o.mirror.why}` : ''}</div>
-                        {m.retry && canPost && o.status !== 'cancelled' && <button onClick={() => resend(o)} className="px-3 py-1.5 rounded-lg bg-slate-800 text-white text-xs font-bold flex-shrink-0">Ab bhejo</button>}
+                        <div className={`text-xs font-semibold ${m.cls}`}>{L(m.text[0], m.text[1])}{o.mirror?.why ? ` — ${o.mirror.why}` : ''}</div>
+                        {m.retry && canPost && o.status !== 'cancelled' && <button onClick={() => resend(o)} className="px-3 py-1.5 rounded-lg bg-slate-800 text-white text-xs font-bold flex-shrink-0">{L('Send now', 'Ab bhejo')}</button>}
                       </div>
                     )}
                     {(o.transport || o.remarks) && <div className="text-xs text-slate-500">{o.transport ? `🚚 ${o.transport}` : ''}{o.transport && o.remarks ? ' · ' : ''}{o.remarks}</div>}
@@ -265,7 +267,7 @@ export default function Orders({ owner = false, role = '' }) {
 
                     {owner && o.status !== 'cancelled' && (
                       <>
-                        <button onClick={() => setMoreId(moreId === o.id ? null : o.id)} className="text-xs font-bold text-slate-400">{moreId === o.id ? '▲ Kam' : '▼ More (paisa, cancel)'}</button>
+                        <button onClick={() => setMoreId(moreId === o.id ? null : o.id)} className="text-xs font-bold text-slate-400">{moreId === o.id ? L('▲ Less', '▲ Kam') : L('▼ More (money, cancel)', '▼ More (paisa, cancel)')}</button>
                         {moreId === o.id && (
                           <div className="space-y-2">
                             <div className="grid grid-cols-2 gap-2 bg-emerald-50 rounded-xl p-3">
