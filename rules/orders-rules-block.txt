@@ -16,37 +16,66 @@
     function oManager() { return signedIn() && (bootstrapOwner() || (tEmail() != '' && exists(oPath()) && get(oPath()).data.active == true && get(oPath()).data.role in ['owner', 'manager'])); }
     function oUnchanged(keys) { return !request.resource.data.diff(resource.data).affectedKeys().hasAny(keys); }
 
-    // users allowlist: any signed-in device may READ (to resolve role at login); only owner WRITES
-    match /apps/orders/users/{id} { allow read: if nonAnon(); allow write: if oOwner(); }
+    // users allowlist: only people ON the list (and the owner) may read it — a stranger with a Google account gets
+    // nothing, and the app shows him "No access"; only the owner writes
+    match /apps/orders/users/{id} { allow read: if oUser(); allow write: if oOwner(); }
+
+    // the staff-group line of an order ("mirror"): staff may only ask for a FAILED line to be sent again — never mark
+    // one as sent, never touch what the laptop job recorded
+    function oResendOk(n, o) {
+      return o.get('mirror', {}).get('status', 'none') in ['held', 'failed', 'uncertain']
+             && n.mirror.status == 'pending'
+             && n.mirror.diff(o.get('mirror', {})).affectedKeys().hasOnly(['status', 'retry', 'why']);
+    }
+    // correction / added-line notes for the staff group: ONE new note at the end, signed by the person, waiting to go;
+    // notes already there (sent or not) cannot be touched, so a sent note can never be made to go again
+    function oNoteOk(n, o) {
+      let was = o.get('groupNotes', []);
+      let last = n.groupNotes[n.groupNotes.size() - 1];
+      return n.groupNotes.size() == was.size() + 1
+             && (was.size() == 0 || n.groupNotes[0:was.size()] == was)
+             && last.keys().hasOnly(['id', 'kind', 'lines', 'status', 'at', 'by'])
+             && last.by == tEmail() && last.status == 'pending' && last.kind in ['ADD', 'EDIT']
+             && last.lines is list && last.lines.size() >= 1 && last.lines.size() <= 40;
+    }
+    function oNewOrderOk(d) {
+      let m = d.get('mirror', {});
+      let ms = m.get('status', 'none');
+      return d.createdByEmail == tEmail()
+             && d.get('price', 0) == 0 && d.get('advance', 0) == 0
+             && d.status == 'pending' && d.get('source', 'app') == 'app'
+             && d.orderNo is string && d.orderNo.matches('^UO-[0-9]{4,6}$')
+             && int(d.orderNo.split('-')[1]) < get(/databases/$(database)/documents/apps/orders/meta/counter).data.next
+             && d.clientName is string && d.clientName.size() <= 80
+             && d.items is list && d.items.size() >= 1 && d.items.size() <= 40
+             && !d.keys().hasAny(['groupNotes', 'notePending', 'cancelledAt', 'cancelledBy', 'cancelReason', 'test', 'scanKey', 'scanRef'])
+             && m.keys().hasOnly(['status'])
+             && (ms == 'none' ? oUser() : (ms == 'pending' && oManager()));
+    }
+    function oOrderEditOk(n, o, ch) {
+      return ch.hasOnly(['clientName', 'items', 'status', 'groupNotes', 'notePending', 'editedAt', 'editedBy', 'lastDispatchAt', 'mirror'])
+             && o.get('status', 'pending') != 'cancelled'
+             && n.get('status', 'pending') in ['pending', 'production', 'ready', 'dispatched']
+             && n.items is list && n.items.size() >= o.get('items', []).size() && n.items.size() <= 40
+             && n.clientName is string && n.clientName.size() <= 80
+             && (!ch.hasAny(['mirror']) || oResendOk(n, o))
+             && (!ch.hasAny(['groupNotes']) || oNoteOk(n, o))
+             && (!ch.hasAny(['notePending']) || n.notePending == true)
+             && oManager();
+    }
 
     match /apps/orders/orders/{id} {
       allow read: if oUser();
       // a new order is always stamped with the signer's own email; only the owner may enter money; only a manager /
-      // owner may ask for a line in the staff group
-      allow create: if oOwner()
-                    || (oUser()
-                        && request.resource.data.get('createdByEmail', '') == tEmail()
-                        && request.resource.data.get('price', 0) == 0 && request.resource.data.get('advance', 0) == 0
-                        && request.resource.data.get('status', 'pending') != 'cancelled'
-                        && request.resource.data.get('orderNo', '') is string && request.resource.data.get('orderNo', '').matches('^UO-[0-9]{4,6}$')
-                        && request.resource.data.get('clientName', '') is string && request.resource.data.get('clientName', '').size() <= 80
-                        && request.resource.data.items is list && request.resource.data.items.size() >= 1 && request.resource.data.items.size() <= 40
-                        && (oManager() || request.resource.data.get('mirror', {}).get('status', 'none') == 'none'));
-      // manager: may correct an order and enter dispatch, but never touch identity or money, never cancel, and
-      // never end up with fewer lines than before.
+      // owner may ask for a line in the staff group; the number must be one the shared counter has already given out
+      allow create: if oOwner() || oNewOrderOk(request.resource.data);
+      // manager: may correct an order and enter dispatch — only the listed fields, never the number, whose order it
+      // is, money, dates or remarks; never cancel; never end up with fewer lines than before.
       // LIMIT (rules cannot loop over a list): the rule checks the NUMBER of lines, not what is in each line. A manager
       // may rewrite a line's item or quantity — that is the "modify" the owner allows. What makes every such change
-      // visible is not this rule but the nightly audit snapshot taken by the laptop job (Admin SDK), which compares
-      // every order with the day before and writes its own log entries that no app login can alter.
-      allow update: if oOwner()
-                    || (oManager()
-                        && oUnchanged(['orderNo', 'createdByEmail', 'createdBy', 'createdAt', 'price', 'advance', 'source', 'scanRef', 'scanKey', 'cancelledAt', 'cancelledBy', 'cancelReason', 'test'])
-                        && resource.data.get('status', 'pending') != 'cancelled'
-                        && request.resource.data.get('status', 'pending') != 'cancelled'
-                        && request.resource.data.items is list
-                        && request.resource.data.items.size() >= resource.data.get('items', []).size()
-                        && request.resource.data.items.size() <= 40
-                        && request.resource.data.get('clientName', '') is string && request.resource.data.get('clientName', '').size() <= 80);
+      // visible is not this rule but the twice-daily audit snapshot taken by the laptop job (Admin SDK), which compares
+      // every order with the copy before and writes its own log entries that no app login can write or alter.
+      allow update: if oOwner() || oOrderEditOk(request.resource.data, resource.data, request.resource.data.diff(resource.data).affectedKeys());
       allow delete: if oOwner();
     }
 
@@ -63,7 +92,9 @@
                     && request.resource.data.keys().hasOnly(['id', 'ts', 'at', 'action', 'detail', 'by', 'ref', 'byEmail'])
                     && request.resource.data.get('action', '') is string && request.resource.data.get('action', '').size() <= 40
                     && request.resource.data.get('detail', '') is string && request.resource.data.get('detail', '').size() <= 2000
-                    && (oOwner() || request.resource.data.get('by', '') != 'owner');
+                    && (oOwner() || request.resource.data.get('by', '') != 'owner')
+                    // these two kinds are written only by the laptop jobs (Admin SDK): no phone login may write one
+                    && !(request.resource.data.get('action', '') in ['AUDIT', 'PAD_CORRECTION']);
       allow update, delete: if false;
     }
 

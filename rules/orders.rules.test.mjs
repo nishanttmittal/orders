@@ -21,6 +21,8 @@ before(async () => {
   await seed('apps/orders/users/' + OFF, { email: OFF, role: 'manager', active: false })
   await seed(O + '/o1', order())
   await seed(O + '/oOwner', order({ id: 'oOwner', orderNo: 'UO-0101', price: 50000, advance: 10000, createdBy: 'owner', createdByEmail: OWNER }))
+  await seed(O + '/oHeld', order({ id: 'oHeld', orderNo: 'UO-0098', mirror: { status: 'held', why: 'x', text: 'UO-0098 …' } }))
+  await seed(O + '/oSent', order({ id: 'oSent', orderNo: 'UO-0097', mirror: { status: 'sent', outboxId: 'ordapp_x' }, groupNotes: [{ id: 'g1', kind: 'EDIT', lines: ['Tilting : 320 Nos'], status: 'sent', at: 'x', by: MGR }] }))
   await seed(O + '/oCancelled', order({ id: 'oCancelled', orderNo: 'UO-0102', status: 'cancelled' }))
   await seed(P + '/p1', { id: 'p1', name: 'Tilting', order: 1 }); await seed(C + '/c1', { name: 'Polestar' })
   await seed(LG + '/l1', { id: 'l1', ts: '2026-10-08T05:00:00.000Z', action: 'ORDER', detail: 'x', by: 'manager', byEmail: MGR })
@@ -35,7 +37,7 @@ test('manager: reads orders, products, clients, doubts, counter', async () => {
   await assertSucceeds(getDocs(collection(d, O))); await assertSucceeds(getDocs(collection(d, P))); await assertSucceeds(getDocs(collection(d, C)))
   await assertSucceeds(getDocs(collection(d, D))); await assertSucceeds(getDoc(doc(d, M, 'counter'))); await assertSucceeds(getDocs(collection(d, 'apps/orders/users')))
 })
-test('manager: new order stamped with his own email, no money', async () => { await assertSucceeds(setDoc(doc(dbOf(MGR), O, 'n1'), order({ id: 'n1', orderNo: 'UO-0103' }))) })
+test('manager: new order stamped with his own email, no money', async () => { await assertSucceeds(setDoc(doc(dbOf(MGR), O, 'n1'), order({ id: 'n1', orderNo: 'UO-0099' }))) })
 test('manager: order-number counter transaction (goes up)', async () => {
   const d = dbOf(MGR)
   await assertSucceeds(runTransaction(d, async (tx) => { const s = await tx.get(doc(d, M, 'counter')); tx.set(doc(d, M, 'counter'), { next: s.data().next + 1, updatedAt: 'x' }, { merge: true }) }))
@@ -46,8 +48,8 @@ test('manager: dispatch entry in a transaction (items changed, status, lastDispa
 })
 test('manager: correct an order (customer + qty), add a line with an ADD note, resend the group line', async () => {
   const d = dbOf(MGR), o = order()
-  await assertSucceeds(setDoc(doc(d, O, 'o1'), { clientName: 'Polestar Inc', items: [{ ...o.items[0], qty: 400, dispatched: 120 }, o.items[1], { product: 'Synchro', finish: '', qty: 100, unit: 'Nos', dispatched: 0 }], status: 'pending', groupNotes: [{ id: 'n1', kind: 'ADD', lines: ['Synchro : 100 Nos'], status: 'pending' }], notePending: true, editedAt: 'x', editedBy: 'manager' }, { merge: true }))
-  await assertSucceeds(setDoc(doc(d, O, 'o1'), { mirror: { status: 'pending', retry: 1 } }, { merge: true }))
+  await assertSucceeds(setDoc(doc(d, O, 'o1'), { clientName: 'Polestar Inc', items: [{ ...o.items[0], qty: 400, dispatched: 120 }, o.items[1], { product: 'Synchro', finish: '', qty: 100, unit: 'Nos', dispatched: 0 }], status: 'pending', groupNotes: [{ id: 'n1', kind: 'ADD', lines: ['Synchro : 100 Nos'], status: 'pending', at: 'x', by: MGR }], notePending: true, editedAt: 'x', editedBy: 'manager' }, { merge: true }))
+  await assertSucceeds(setDoc(doc(d, O, 'oHeld'), { mirror: { status: 'pending', retry: 1, why: '' } }, { merge: true }))   // "Send now" on a failed line
 })
 test('manager: adds a customer and an item name; writes a log line as himself; settles a doubt', async () => {
   const d = dbOf(MGR)
@@ -99,6 +101,28 @@ test('manager: cannot move the counter back, or rewrite a doubt question', async
 })
 test('manager: cannot change the users list (make himself owner)', async () => { await assertFails(setDoc(doc(dbOf(MGR), 'apps/orders/users', MGR), { role: 'owner' }, { merge: true })) })
 
+test('manager: cannot mark a group line as sent, re-send a line that already went, or make a sent note go again', async () => {
+  const d = dbOf(MGR)
+  await assertFails(setDoc(doc(d, O, 'o1'), { mirror: { status: 'sent' } }, { merge: true }))          // hide a waiting post
+  await assertFails(setDoc(doc(d, O, 'oSent'), { mirror: { status: 'pending' } }, { merge: true }))    // post the same order twice
+  await assertFails(setDoc(doc(d, O, 'oHeld'), { mirror: { status: 'pending', text: 'anything' } }, { merge: true }))
+  await assertFails(setDoc(doc(d, O, 'oSent'), { groupNotes: [{ id: 'g1', kind: 'EDIT', lines: ['Tilting : 320 Nos'], status: 'pending', at: 'x', by: MGR }], notePending: true }, { merge: true }))
+  await assertFails(setDoc(doc(d, O, 'oSent'), { groupNotes: [{ id: 'g1', kind: 'EDIT', lines: ['Tilting : 320 Nos'], status: 'sent', at: 'x', by: MGR }, { id: 'g2', kind: 'EDIT', lines: ['x : 1 Nos'], status: 'pending', at: 'x', by: OWNER }], notePending: true }, { merge: true }))   // signed as someone else
+  await assertFails(setDoc(doc(d, O, 'oSent'), { remarks: 'changed', deliveryDate: '2027-01-01' }, { merge: true }))   // fields outside the allowed list
+  await assertSucceeds(setDoc(doc(d, O, 'oSent'), { groupNotes: [{ id: 'g1', kind: 'EDIT', lines: ['Tilting : 320 Nos'], status: 'sent', at: 'x', by: MGR }, { id: 'g2', kind: 'EDIT', lines: ['Tilting : 300 Nos'], status: 'pending', at: 'x', by: MGR }], notePending: true }, { merge: true }))
+})
+test('manager: cannot use an order number the counter has not given out, or write an AUDIT entry', async () => {
+  const d = dbOf(MGR)
+  await assertFails(setDoc(doc(d, O, 'n7'), order({ id: 'n7', orderNo: 'UO-999999' }))); await assertFails(setDoc(doc(d, O, 'n8'), order({ id: 'n8', orderNo: 'UO-0500' })))
+  await assertFails(setDoc(doc(d, O, 'n9'), order({ id: 'n9', orderNo: 'UO-0095', mirror: { status: 'sent' } })))
+  await assertFails(setDoc(doc(d, LG, 'l9'), { id: 'l9', ts: 'x', at: serverTimestamp(), action: 'AUDIT', detail: 'all fine', by: 'laptop audit', byEmail: MGR }))
+  await assertFails(setDoc(doc(d, LG, 'l10'), { id: 'l10', ts: 'x', at: serverTimestamp(), action: 'AUDIT', detail: 'all fine', by: 'laptop audit', byEmail: 'laptop-audit' }))
+})
+test('users list: the manager can read it (his app needs it); a stranger, an inactive user and an anonymous device cannot', async () => {
+  await assertSucceeds(getDocs(collection(dbOf(MGR), 'apps/orders/users'))); await assertSucceeds(getDocs(collection(dbOf(OWNER), 'apps/orders/users')))
+  for (const d of [dbOf(STRANGER), dbOf(OFF), anonDb()]) await assertFails(getDocs(collection(d, 'apps/orders/users')))
+})
+
 // ---------- owner: everything the Admin / owner screens do ----------
 test('owner: money, cancel, remove a line, delete a name, read logs, delete an order', async () => {
   const d = dbOf(OWNER)
@@ -112,7 +136,7 @@ test('owner: even the owner cannot edit or delete a log line', async () => { awa
 // ---------- everyone else ----------
 test('employee: may enter an order without a group line, nothing more', async () => {
   const d = dbOf(EMP)
-  await assertSucceeds(setDoc(doc(d, O, 'e1'), order({ id: 'e1', orderNo: 'UO-0104', createdBy: 'employee', createdByEmail: EMP, mirror: { status: 'none' } })))
+  await assertSucceeds(setDoc(doc(d, O, 'e1'), order({ id: 'e1', orderNo: 'UO-0096', createdBy: 'employee', createdByEmail: EMP, mirror: { status: 'none' } })))
   await assertFails(setDoc(doc(d, O, 'e2'), order({ id: 'e2', createdBy: 'employee', createdByEmail: EMP, mirror: { status: 'pending' } })))
   await assertFails(setDoc(doc(d, O, 'o1'), { clientName: 'x' }, { merge: true })); await assertFails(setDoc(doc(d, P, 'p9'), { name: 'x' })); await assertFails(getDocs(collection(d, D)))
 })
