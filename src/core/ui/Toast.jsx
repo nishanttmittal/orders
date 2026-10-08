@@ -2,19 +2,24 @@
  * useToast — tiny transient-message hook + Toast component. Reusable feedback
  * ("Saved!", "Deleted 3 entries") for any module.
  */
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 
 export function useToast() {
   const [msg, setMsg] = useState('')
+  const timer = useRef()
   const show = useCallback((m, ms = 2500) => {
+    clearTimeout(timer.current)   // an earlier message's timer must not wipe a later one
     setMsg(m)
-    setTimeout(() => setMsg(''), ms)
+    timer.current = setTimeout(() => setMsg(''), ms)
   }, [])
   return { msg, show }
 }
 
-export function Toast({ msg, tone = 'success' }) {
+// a message that says something did NOT happen is shown in red, whatever the caller passed
+const BAD = /\bNOT\b|NAHI\b|No internet|Internet nahi|cannot|nahi sakt|not found|nahi mila|cancelled —|Enter |likhein|Only .* is pending|Baaki sirf|changed meanwhile|badal gaya/
+export function Toast({ msg, tone }) {
   if (!msg) return null
+  tone = tone || (BAD.test(String(msg)) ? 'error' : 'success')
   const tones = {
     success: 'bg-emerald-500',
     error: 'bg-red-500',

@@ -23,6 +23,17 @@ const KIND = {
   ADD_CLIENT: ['other', 'New customer name', 'Naya customer naam', 'bg-violet-100 text-violet-700'], ADD_PRODUCT: ['other', 'New item name', 'Naya item naam', 'bg-violet-100 text-violet-700'],
   DEL_PRODUCT: ['change', 'Item name deleted', 'Item naam hataya', 'bg-rose-100 text-rose-700'], DEL_CLIENT: ['change', 'Customer name deleted', 'Customer naam hataya', 'bg-rose-100 text-rose-700'],
   USER_ADD: ['other', 'User added', 'User joda', 'bg-slate-100 text-slate-600'], USER_DEL: ['change', 'User removed', 'User hataya', 'bg-rose-100 text-rose-700'],
+  USER_ON: ['change', 'User access turned ON', 'User ka access ON', 'bg-rose-100 text-rose-700'], USER_OFF: ['change', 'User access turned OFF', 'User ka access OFF', 'bg-rose-100 text-rose-700'],
+  USER_ROLE: ['change', 'User role changed', 'User ka role badla', 'bg-rose-100 text-rose-700'], RESTORE: ['change', 'Data restored from a backup file', 'Backup se data wapas', 'bg-rose-100 text-rose-700'],
+  MONEY_EDIT: ['change', 'Price / advance changed', 'Price / advance badla', 'bg-amber-100 text-amber-700'],
+}
+// Every entry is shown. An action this screen does not know is shown under its own name, never dropped; and the
+// "found by the laptop check" label is given only to entries the laptop job itself wrote (a phone cannot sign as it
+// once the tighter rules are live) — an AUDIT entry from any other login is shown as what it is.
+const AUDIT_BY = 'laptop-audit'
+const kindOf = (l) => {
+  if (l.action === 'AUDIT' && l.byEmail !== AUDIT_BY) return ['change', '⚠ "Audit" entry NOT written by the laptop', '⚠ "Audit" entry jo laptop ne NAHI likhi', 'bg-red-600 text-white']
+  return KIND[l.action] || ['other', l.action || 'Entry', l.action || 'Entry', 'bg-slate-100 text-slate-600']
 }
 const SEEN_KEY = 'ord:logsSeenAt'
 const OWNERS = OWNER_EMAILS.map((e) => e.toLowerCase())
@@ -43,7 +54,7 @@ export default function Logs() {
   const list = useMemo(() => {
     const term = q.trim().toLowerCase()
     return [...logs.list]
-      .filter((l) => KIND[l.action] && (kind === 'all' || KIND[l.action][0] === kind))
+      .filter((l) => kind === 'all' || kindOf(l)[0] === kind)
       .filter((l) => !others || !(l.byEmail && ownerEmails.includes(l.byEmail)))
       .filter((l) => !day || dayOf(logTime(l)) === day)
       .filter((l) => !term || String(l.detail || '').toLowerCase().includes(term))
@@ -53,6 +64,7 @@ export default function Logs() {
   const who = (l) => {
     const byMail = (users?.list || []).find((u) => (u.email || '').toLowerCase() === l.byEmail)?.name
     if (byMail) return byMail
+    if (l.byEmail === AUDIT_BY) return 'Laptop'
     if (l.byEmail) return ownerEmails.includes(l.byEmail) ? 'Owner' : l.byEmail
     // no email on the entry (older entries): say only what is recorded — the role label — never a person's name
     return l.by ? `${l.by} login` : ''
@@ -73,7 +85,7 @@ export default function Logs() {
       <div className="text-xs text-slate-500 px-1">{list.length} {L('entries', 'entry')}{list.filter((l) => logTime(l) > seenAt).length ? ` · ${list.filter((l) => logTime(l) > seenAt).length} ${L('new', 'nayi')}` : ''}</div>
       {list.length === 0 && <Card className="p-8 text-center text-slate-400">{L('Nothing here.', 'Yahan kuch nahi.')}</Card>}
       {list.map((l) => {
-        const [, en, hi, cls] = KIND[l.action]
+        const [, en, hi, cls] = kindOf(l)
         return (
           <Card key={l.id} className={`p-3 ${logTime(l) > seenAt ? 'border-2 border-blue-200' : ''}`}>
             <div className="flex items-center justify-between gap-2">

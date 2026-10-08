@@ -29,7 +29,17 @@ const CHANGE = {
   ORDER_ADD_LINE: ['Line added', 'Line jodi', 'bg-amber-100 text-amber-700'], CANCEL_ORDER: ['Order cancelled', 'Order cancel', 'bg-rose-100 text-rose-700'],
   DOUBT_CLEAR: ['Doubt cleared', 'Doubt clear', 'bg-slate-100 text-slate-600'], ADD_CLIENT: ['New customer name', 'Naya customer naam', 'bg-violet-100 text-violet-700'],
   ADD_PRODUCT: ['New item name', 'Naya item naam', 'bg-violet-100 text-violet-700'], GROUP_RESEND: ['Group line re-sent', 'Group me dobara bheja', 'bg-slate-100 text-slate-600'],
+  DEL_PRODUCT: ['Item name deleted', 'Item naam hataya', 'bg-rose-100 text-rose-700'], DEL_CLIENT: ['Customer name deleted', 'Customer naam hataya', 'bg-rose-100 text-rose-700'],
+  USER_ADD: ['User added', 'User joda', 'bg-rose-100 text-rose-700'], USER_DEL: ['User removed', 'User hataya', 'bg-rose-100 text-rose-700'],
+  USER_ON: ['User access turned ON', 'User ka access ON', 'bg-rose-100 text-rose-700'], USER_OFF: ['User access turned OFF', 'User ka access OFF', 'bg-rose-100 text-rose-700'],
+  USER_ROLE: ['User role changed', 'User ka role badla', 'bg-rose-100 text-rose-700'], RESTORE: ['Data restored from a backup file', 'Backup se data wapas', 'bg-rose-100 text-rose-700'],
+  MONEY_EDIT: ['Price / advance changed', 'Price / advance badla', 'bg-amber-100 text-amber-700'],
 }
+// counted elsewhere on this page (new orders, dispatch): everything ELSE is a change and is listed, known or not
+const NOT_A_CHANGE = ['ORDER', 'DISPATCH', 'DISPATCH_ALL', 'PAD_CORRECTION']
+const changeKind = (l) => (l.action === 'AUDIT' && l.byEmail !== 'laptop-audit')
+  ? ['⚠ "Audit" entry NOT written by the laptop', '⚠ "Audit" entry jo laptop ne NAHI likhi', 'bg-red-600 text-white']
+  : CHANGE[l.action] || [l.action || 'Entry', l.action || 'Entry', 'bg-slate-100 text-slate-600']
 
 export default function DayReport() {
   const { orders, logs, users } = useOrders()
@@ -76,7 +86,7 @@ export default function DayReport() {
 
   const dayLogs = useMemo(() => logs.list.filter((l) => dayOf(logTime(l)) === day).sort((a, b) => logTime(b).localeCompare(logTime(a))), [logs.list, day])
   const newOrders = useMemo(() => orders.list.filter((o) => !o.test && dayOf(o.createdAt) === day && o.source !== 'pad-2026-10-07').sort((a, b) => (a.orderNo || '').localeCompare(b.orderNo || '')), [orders.list, day])
-  const changes = dayLogs.filter((l) => CHANGE[l.action] && (mine || !isOwner(l)))
+  const changes = dayLogs.filter((l) => !NOT_A_CHANGE.includes(l.action) && (mine || !isOwner(l)))
   const count = (a) => dayLogs.filter((l) => l.action === a).length
   const shareText = () => [
     `UNICO — ${nice(day)}`,
@@ -148,7 +158,7 @@ export default function DayReport() {
         </div>
         {changes.length === 0 && <div className="text-sm text-slate-400">{L('No changes this day.', 'Is din koi badlav nahi.')}</div>}
         {changes.map((l) => {
-          const [en, hi, cls] = CHANGE[l.action]
+          const [en, hi, cls] = changeKind(l)
           return (
             <div key={l.id} className="border-t border-slate-100 pt-2 first:border-t-0 first:pt-0">
               <div className="flex items-center justify-between gap-2"><span className={`text-[11px] font-bold px-2 py-0.5 rounded-lg ${cls}`}>{L(en, hi)}</span><span className="text-[11px] text-slate-400">{timeOf(logTime(l))} · {who(l)}</span></div>

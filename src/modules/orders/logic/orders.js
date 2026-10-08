@@ -4,6 +4,8 @@
 import { todayStr } from '../../../core/utils/format'
 
 const num = (v) => Number(v) || 0
+// quantities are kept to 3 decimals (kg): 2 decimals left a 0.005 that could never be dispatched
+const r3 = (v) => Math.round(num(v) * 1000) / 1000
 export const itemsQty = (o) => (o.items || []).reduce((s, it) => s + num(it.qty), 0)
 export const balance = (o) => num(o.price) - num(o.advance)
 export const isOpen = (o) => o.status !== 'dispatched' && o.status !== 'cancelled'
@@ -11,7 +13,7 @@ export const isOpen = (o) => o.status !== 'dispatched' && o.status !== 'cancelle
 // ── Closing by quantity (added 08-10-2026) ─────────────────────────────────
 /** Quantity already sent on a line. Old orders marked Dispatched (before per-line tracking) count as fully sent. */
 export const lineSent = (o, it) => (it.dispatched != null ? Math.min(num(it.dispatched), num(it.qty)) : o.status === 'dispatched' ? num(it.qty) : 0)
-export const lineBalance = (o, it) => Math.max(0, num(it.qty) - lineSent(o, it))
+export const lineBalance = (o, it) => r3(Math.max(0, num(it.qty) - lineSent(o, it)))
 export const orderSent = (o) => (o.items || []).reduce((s, it) => s + lineSent(o, it), 0)
 export const orderBalance = (o) => (o.items || []).reduce((s, it) => s + lineBalance(o, it), 0)
 export const lineUnit = (it) => it.unit || 'Nos'
@@ -26,10 +28,10 @@ export function applyDispatch(o, lineIndex, add, by = '') {
   const cur = (o.items || [])[lineIndex]
   if (!cur) throw new Error('Line nahi mili')
   if (!(num(add) > 0)) throw new Error('Kitna gaya? Number likhein')
-  if (num(add) > lineBalance(o, cur) + 1e-9) throw new Error(`Baaki sirf ${lineBalance(o, cur)} hai`)
+  if (num(add) > lineBalance(o, cur) + 1e-9) throw new Error(`Baaki sirf ${r3(lineBalance(o, cur))} hai`)
   const items = (o.items || []).map((it, i) => {
     if (i !== lineIndex) return { ...it, dispatched: lineSent(o, it) }
-    return { ...it, dispatched: Math.round((lineSent(o, it) + num(add)) * 100) / 100, log: [...(it.log || []), { at: new Date().toISOString(), qty: num(add), by }] }
+    return { ...it, dispatched: r3(lineSent(o, it) + num(add)), log: [...(it.log || []), { at: new Date().toISOString(), qty: num(add), by }] }
   })
   const left = items.reduce((s, it) => s + Math.max(0, num(it.qty) - num(it.dispatched)), 0)
   const status = left === 0 ? 'dispatched' : o.status === 'dispatched' ? 'ready' : o.status
@@ -42,7 +44,7 @@ export function undoLastDispatch(o, lineIndex) {
     if (i !== lineIndex) return { ...it, dispatched: lineSent(o, it) }
     const log = [...(it.log || [])]
     const last = log.pop()
-    return { ...it, dispatched: last ? Math.max(0, Math.round((lineSent(o, it) - num(last.qty)) * 100) / 100) : 0, log }
+    return { ...it, dispatched: last ? Math.max(0, r3(lineSent(o, it) - num(last.qty))) : 0, log }
   })
   const left = items.reduce((s, it) => s + Math.max(0, num(it.qty) - num(it.dispatched)), 0)
   return { items, status: left === 0 ? 'dispatched' : o.status === 'dispatched' ? 'pending' : o.status }

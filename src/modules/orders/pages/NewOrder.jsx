@@ -61,12 +61,15 @@ export default function NewOrder({ owner = false, role = '' }) {
         mirror: { status: toGroup && trusted ? 'pending' : 'none' },
       })
       // only now is the order really stored (in the cloud, or on this phone waiting for the network)
-      const who = owner ? 'owner' : 'manager'
-      if (!clients.list.some(c => c.name.toLowerCase() === cn.toLowerCase())) { clients.insert({ name: cn }); log('ADD_CLIENT', cn, who) }
-      for (const it of trusted ? cleanItems : []) {
-        if (!products.list.some(p => (p.name || '').toLowerCase() === it.product.toLowerCase())) { products.insert({ name: it.product, order: 999, unit: it.unit }); log('ADD_PRODUCT', it.product, who) }
-      }
-      log('ORDER', `${orderNo} · ${cn}\n${cleanItems.map(it => `${it.product} ${it.qty} ${it.unit}`).join('\n')}`, who)
+      // From here on a failure must never read as "NOT saved" (a second tap would make a second order).
+      const who = owner ? 'owner' : role || 'manager'
+      try {
+        log('ORDER', `${orderNo} · ${cn}\n${cleanItems.map(it => `${it.product} ${it.qty} ${it.unit}`).join('\n')}`, who)
+        if (!clients.list.some(c => (c.name || '').toLowerCase() === cn.toLowerCase())) Promise.resolve(clients.insertSafe({ name: cn })).then(() => log('ADD_CLIENT', cn, who)).catch(() => {})
+        for (const it of trusted ? cleanItems : []) {
+          if (!products.list.some(p => (p.name || '').toLowerCase() === it.product.toLowerCase())) Promise.resolve(products.insertSafe({ name: it.product, order: 999, unit: it.unit })).then(() => log('ADD_PRODUCT', it.product, who)).catch(() => {})
+        }
+      } catch { /* the order itself is saved */ }
       show(where === 'cloud' ? (toGroup && trusted ? L(`${orderNo} saved ✓ — going to the order list`, `${orderNo} save ✓ — order list me jayega`) : L(`${orderNo} saved ✓`, `${orderNo} save ✓`)) : L(`${orderNo} saved on this phone — will upload when the network is back`, `${orderNo} phone me save — net aate hi upar jayega`), 3000)
       setClientName(''); setItems([blank()]); setDeliveryDate(''); setRemarks(''); setPrice(''); setAdvance(''); setToGroup(true)
     } catch {
@@ -89,7 +92,7 @@ export default function NewOrder({ owner = false, role = '' }) {
         {items.map((it, i) => (
           <div key={i} className={`space-y-1.5 ${i > 0 ? 'pt-3 border-t border-slate-100' : ''}`}>
             {/* item on its own full-width row so long names and the suggestion list are readable; quantity below */}
-            <Suggest value={it.product} onChange={v => setItem(i, { product: v })} onPick={p => setItem(i, { product: p.name, unit: p.unit || it.unit || 'Nos' })} options={products.list} placeholder={`Item ${items.length > 1 ? i + 1 : ''}`.trim()} className={inputCls} />
+            <Suggest value={it.product} onChange={v => setItem(i, { product: v })} onPick={p => setItem(i, { product: p.name, unit: p.unit || 'Nos' })} options={products.list} placeholder={`Item ${items.length > 1 ? i + 1 : ''}`.trim()} className={inputCls} />
             <div className="flex gap-2 items-center">
               <div className="w-36 flex-shrink-0"><NumberInput inputMode="decimal" className="text-center !px-2" placeholder="Qty" value={it.qty} onChange={e => setItem(i, { qty: e.target.value })} /></div>
               <span className={`text-sm font-bold flex-1 ${it.unit && it.unit !== 'Nos' ? 'text-amber-700' : 'text-slate-400'}`}>{it.unit || 'Nos'}</span>

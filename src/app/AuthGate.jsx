@@ -82,7 +82,10 @@ export default function AuthGate({ title = 'UNICO Orders', icon = '📋', childr
     )
   }
   if (email && role) return children({ role, email, signOut: signOutUser })
-  if (email && !role && !graceOver) {
+  // "No access" is said only when the users list was really read (or really refused). While it is still loading,
+  // or the connection dropped, keep checking — a manager must not be thrown out because the line was bad.
+  const usersKnown = !users.state || users.state === 'ok' || users.state === 'denied'
+  if (email && !role && (!graceOver || !usersKnown)) {
     return (
       <Screen>
         <div className="text-2xl">🔐</div>

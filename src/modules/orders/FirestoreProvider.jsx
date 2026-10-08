@@ -3,17 +3,17 @@
  * local provider. Seeds the product master on first run (idempotent).
  */
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { setDoc, deleteDoc, writeBatch, runTransaction, serverTimestamp } from 'firebase/firestore'
+import { setDoc, deleteDoc, runTransaction, serverTimestamp } from 'firebase/firestore'
 
 // Wait for a cloud write for a few seconds. 'cloud' = the server has it. 'local' = no answer yet (weak / no
 // network): the write is stored on this phone and syncs by itself. A rejected write throws.
 const settle = (p, ms = 5000) => Promise.race([p.then(() => 'cloud'), new Promise((resolve) => setTimeout(() => resolve('local'), ms))])
-import { onSnapshot, getDocs } from '../../core/db/readmeter'   // metered reads → usage_reads (quota diagnosis)
+import { onSnapshot } from '../../core/db/readmeter'   // metered reads → usage_reads (quota diagnosis)
 import { db, auth, paths, ensureSignedIn, watchAuth } from '../../core/db/firebase'
 import { makeNormalizer } from '../../core/schema/field'
 import { makeId } from '../../core/db/repository'
 import { orderSchema, clientSchema, productSchema } from './schema'
-import { DEFAULT_PRODUCTS } from './config'
+import { OWNER_EMAILS } from './config'
 import { lastUsedStore } from './data'
 import { nextOrderNo, padOrderNo } from './orderNo'
 import { OrdersCtx } from './OrdersContext'
@@ -21,18 +21,32 @@ import { OrdersCtx } from './OrdersContext'
 // authKey re-subscribes the listener when the signed-in user changes (anon →
 // Google). Without this, a listener that was permission-denied while anonymous
 // would stay dead after login and the data would never appear.
-function useCloudCollection(collPath, docPath, normalize, authKey) {
+// `state`: 'loading' (no answer yet) | 'ok' | 'denied' (this login may not read it) | 'error' (connection / quota).
+// A connection error KEEPS the last list (an empty order book must never be shown because the line dropped) and
+// the listener is tried again by itself. `enabled = false` opens no listener at all (screens this login cannot use).
+function useCloudCollection(collPath, docPath, normalize, authKey, enabled = true) {
   const [list, setList] = useState([])
+  const [state, setState] = useState('loading')
+  const [retry, setRetry] = useState(0)
   useEffect(() => {
+    if (!enabled) return undefined
+    let timer
+    const signedIn = authKey !== 'anon' && authKey !== 'none'
     const unsub = onSnapshot(
       collPath(),
-      (snap) => setList(snap.docs.map(d => normalize({ id: d.id, ...d.data() }))),
-      () => setList([]) // denied before sign-in → empty; re-subscribes when authKey changes
+      (snap) => { setList(snap.docs.map(d => normalize({ id: d.id, ...d.data() }))); setState('ok') },
+      (e) => {
+        const denied = e?.code === 'permission-denied'
+        if (denied) setList([])   // not allowed (before sign-in, or access removed): show nothing
+        setState(denied ? 'denied' : 'error')
+        if (signedIn) timer = setTimeout(() => setRetry(n => n + 1), denied ? 30000 : 5000)
+      }
     )
-    return unsub
-  }, [authKey]) // eslint-disable-line react-hooks/exhaustive-deps
+    return () => { clearTimeout(timer); unsub() }
+  }, [authKey, retry, enabled]) // eslint-disable-line react-hooks/exhaustive-deps
   return {
-    list,
+    list: enabled ? list : [],
+    state: enabled ? state : 'off',
     insert: (rec) => { const id = rec.id || makeId('r'); const row = { createdAt: new Date().toISOString(), ...rec, id }; setDoc(docPath(id), row); return row },
     // Same as insert, but tells the truth about the result: resolves { row, where: 'cloud' | 'local' }, or throws
     // if the write was refused. Screens must not say "saved" before this resolves.
@@ -49,17 +63,25 @@ function useCloudCollection(collPath, docPath, normalize, authKey) {
     }),
     update: (id, patch) => setDoc(docPath(id), patch, { merge: true }),
     remove: (id) => deleteDoc(docPath(id)),
-    replaceAll: async (rows) => {
-      const ex = await getDocs(collPath()); const b1 = writeBatch(db); ex.forEach(d => b1.delete(d.ref)); await b1.commit()
-      const b2 = writeBatch(db); (rows || []).forEach(r => { const id = r.id || makeId('r'); b2.set(docPath(id), { ...r, id }) }); await b2.commit()
-    },
-    reset: async () => { const ex = await getDocs(collPath()); const b = writeBatch(db); ex.forEach(d => b.delete(d.ref)); await b.commit() },
   }
 }
 
-const normOrder = makeNormalizer(orderSchema)
-const normClient = makeNormalizer(clientSchema)
-const normProduct = makeNormalizer(productSchema)
+// One odd record (a name that is not text, a line that is not an object) must never blank the whole screen:
+// every record is brought to the shape the screens expect before it reaches them.
+const baseOrder = makeNormalizer(orderSchema)
+const normOrder = (r) => {
+  const o = baseOrder(r)
+  return {
+    ...o, orderNo: String(o.orderNo ?? ''), orderDate: String(o.orderDate ?? ''), clientName: String(o.clientName ?? ''),
+    mirror: o.mirror && typeof o.mirror === 'object' ? o.mirror : { status: 'none' },
+    items: (Array.isArray(o.items) ? o.items : []).filter(x => x && typeof x === 'object').map(x => ({ ...x, product: String(x.product ?? ''), finish: String(x.finish ?? '') })),
+  }
+}
+const baseClient = makeNormalizer(clientSchema)
+const baseProduct = makeNormalizer(productSchema)
+const normClient = (r) => { const c = baseClient(r); return { ...c, name: String(c.name ?? '') } }
+const normProduct = (r) => { const c = baseProduct(r); return { ...c, name: String(c.name ?? '') } }
+const normLog = (r) => ({ ...r, ts: String(r.ts ?? ''), action: String(r.action ?? ''), detail: String(r.detail ?? '') })
 
 export function FirestoreProvider({ children }) {
   const [ready, setReady] = useState(false)
@@ -72,9 +94,13 @@ export function FirestoreProvider({ children }) {
   const orders   = useCloudCollection(paths.orders, paths.order, normOrder, authKey)
   const clients  = useCloudCollection(paths.clients, paths.client, normClient, authKey)
   const products = useCloudCollection(paths.products, paths.product, normProduct, authKey)
-  const logs     = useCloudCollection(paths.logs, paths.logDoc, (r) => r, authKey)
-  const inbox    = useCloudCollection(paths.inbox, paths.inboxDoc, (r) => r, authKey)
   const users    = useCloudCollection(paths.users, paths.user, (r) => r, authKey)
+  // The change log is the owner's screen: other logins do not download it at all. (The old WhatsApp inbox screen
+  // is hidden, so its collection is not listened to by anyone.)
+  const myEmail = (authKey.split(':')[1] || '').toLowerCase()
+  const isOwner = !!myEmail && (OWNER_EMAILS.map(e => e.toLowerCase()).includes(myEmail) || users.list.some(u => (u.email || '').toLowerCase() === myEmail && u.role === 'owner' && u.active !== false))
+  const logs     = useCloudCollection(paths.logs, paths.logDoc, normLog, authKey, isOwner)
+  const inbox    = useCloudCollection(paths.inbox, paths.inboxDoc, (r) => r, authKey, false)
   const doubts   = useCloudCollection(paths.doubts, paths.doubt, (r) => r, authKey)
 
   useEffect(() => {
@@ -85,7 +111,8 @@ export function FirestoreProvider({ children }) {
     // data collections are now allowlist-locked and would error under anon.
     const unsub = onSnapshot(paths.users(),
       () => { done = true; clearTimeout(timer); setReady(true) },
-      (e) => { done = true; clearTimeout(timer); setError(e.message); setReady(true) })
+      // "not allowed" here only means nobody is signed in yet (the sign-in screen comes next): not a cloud error
+      (e) => { done = true; clearTimeout(timer); if (e?.code !== 'permission-denied') setError(e.message); setReady(true) })
     ensureSignedIn().catch((e) => { done = true; clearTimeout(timer); setError(e.message); setTimedOut(true) })
     return () => { clearTimeout(timer); unsub() }
   }, [])
@@ -97,6 +124,7 @@ export function FirestoreProvider({ children }) {
     // `at` is filled in by the server, so the time of an entry does not depend on the phone's clock (ts is kept for
     // sorting while the write is still on its way)
     setDoc(paths.logDoc(id), { id, ts: new Date().toISOString(), at: serverTimestamp(), action: String(action).slice(0, 40), detail: String(detail ?? '').slice(0, 2000), by, ref, byEmail: (auth?.currentUser?.email || '').toLowerCase() })
+      .catch((e) => console.warn('log entry not saved:', action, e?.code || e?.message))   // the laptop's own comparison still records the change
   }, [])
 
   // Order numbers come from one counter shared with the laptop job (which creates orders approved on WhatsApp),
@@ -109,7 +137,10 @@ export function FirestoreProvider({ children }) {
     const viaCounter = runTransaction(db, async (tx) => {
       const ref = paths.meta('counter')
       const snap = await tx.get(ref)
-      const n = Math.max(snap.exists() ? Number(snap.data().next) || 1 : 1, localNext)
+      const cur = snap.exists() ? Number(snap.data().next) || 1 : 1
+      // normally the counter is already ahead of every order on this phone. If one stray order carries a far higher
+      // number, it is ignored: the counter only ever moves forward in small steps.
+      const n = localNext > cur && localNext <= cur + 15 ? localNext : cur
       tx.set(ref, { next: n + 1, updatedAt: new Date().toISOString() }, { merge: true })
       return padOrderNo(n)
     })
@@ -117,15 +148,8 @@ export function FirestoreProvider({ children }) {
     return Promise.race([viaCounter, timeout])
   }, [])
 
-  const seededRef = useRef(false)
-  useEffect(() => {
-    // only seed once a real (allowlisted) user is signed in — writes are denied
-    // for anonymous devices under the locked rules.
-    const realUser = authKey !== 'anon' && authKey !== 'none'
-    if (!ready || !realUser || seededRef.current) return
-    seededRef.current = true
-    if (products.list.length === 0) DEFAULT_PRODUCTS.forEach((name, i) => setDoc(paths.product(`seed_p${i + 1}`), { id: `seed_p${i + 1}`, name, order: i }))
-  }, [ready, authKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  // (The first-run seeding of 14 default item names was removed 08-10-2026: the item list is filled, and on a slow
+  // start it could bring back names the owner had deleted.)
 
   if (!ready && timedOut) {
     return (

@@ -11,7 +11,7 @@ import { Button, Card, NumberInput, useToast, Toast } from '../../../core/ui'
 import { todayStr, fmtDate } from '../../../core/utils/format'
 import { useOrders } from '../OrdersContext'
 import { auth } from '../../../core/db/firebase'
-import { groupLine } from '../logic/orders'
+import { groupLine, lineSent } from '../logic/orders'
 import Suggest from '../Suggest'
 import { useL } from '../i18n'
 
@@ -48,7 +48,7 @@ export default function Doubts({ owner = false, role = '' }) {
     return used.map(r => ({ product: r.product.trim(), finish: '', qty: Number(r.qty), unit: r.unit || 'Nos', dispatched: 0 }))
   }
   const clear = async (d, outcome, extra = {}) => {
-    await doubts.update(d.id, { status: 'cleared', outcome, clearedAt: new Date().toISOString(), clearedBy: by, clearedByEmail: email, ...extra })
+    await doubts.updateSafe(d.id, { status: 'cleared', outcome, clearedAt: new Date().toISOString(), clearedBy: by, clearedByEmail: email, ...extra })
     log('DOUBT_CLEAR', `${d.customer} · ${outcome}`, by, d.id)
     setOpenId(null)
   }
@@ -68,14 +68,15 @@ export default function Doubts({ owner = false, role = '' }) {
       await orders.change(o.id, (latest) => {
         if (latest.status === 'cancelled') throw new Error('cancelled')
         return {
-          items: [...(latest.items || []), ...add], status: latest.status === 'dispatched' ? 'pending' : latest.status,
+          items: [...(latest.items || []).map(it => ({ ...it, dispatched: lineSent(latest, it) })), ...add], status: latest.status === 'dispatched' ? 'pending' : latest.status,
           groupNotes: [...(latest.groupNotes || []), { id: `n${Date.now()}`, kind: 'ADD', lines: add.map(groupLine), status: 'pending', at: new Date().toISOString(), by: email }],
           notePending: true,
         }
       })
       log('ORDER_ADD_LINE', `${o.orderNo} · ${o.clientName} · ${add.map(a => `${a.product} ${a.qty}`).join(', ')}`, by, o.id)
-      await clear(d, 'order me joda', { addedLines: add })   // the card is cleared only after the order really changed
       show(L(`Added to ${o.orderNo} ✓ — the order list will be told too`, `${o.orderNo} me jod diya ✓ — order list me bhi jayega`), 3000)
+      // the order HAS changed: from here on a failure must never read as "not added" (a second tap would add it twice)
+      clear(d, 'order me joda', { addedLines: add }).catch(() => show(L('Added ✓ — but the doubt card did not close. Tap "Nothing to add" on it.', 'Jud gaya ✓ — par doubt card band nahi hua. Us par "Jodna nahi hai" dabayein.'), 6000))
     } catch (e) {
       show(e?.message === 'cancelled' ? L('This order is cancelled', 'Ye order cancel hai') : L('NOT added — check the internet and try again', 'Jod NAHI paya — internet dekh kar dobara karein'), 3500)
     } finally { setBusy(false) }
@@ -95,10 +96,13 @@ export default function Doubts({ owner = false, role = '' }) {
         orderNo, orderDate: todayStr(), clientName: cn, deliveryDate: '', items, transport: '', remarks: `Doubt se bana${d.source ? ' (' + (SRC[d.source] || d.source) + ')' : ''}`,
         status: 'pending', price: 0, advance: 0, createdBy: by, createdByEmail: email, source: 'app', mirror: { status: 'pending' },
       })
-      if (cn && !clients.list.some(c => (c.name || '').toLowerCase() === cn.toLowerCase())) clients.insert({ name: cn })
-      log('ORDER', `${orderNo} · ${cn} · doubt se`, by)
-      await clear(d, 'order bana', { newOrderId: row?.id || '', newOrderNo: orderNo })
+      // the order IS saved: nothing below may end in "NOT saved" (a second tap would make a second order)
       show(L(`${orderNo} created ✓ — going to the order list`, `${orderNo} ban gaya ✓ — order list me jayega`), 2500)
+      try {
+        if (cn && !clients.list.some(c => (c.name || '').toLowerCase() === cn.toLowerCase())) Promise.resolve(clients.insertSafe({ name: cn })).catch(() => {})
+        log('ORDER', `${orderNo} · ${cn} · doubt se`, by)
+      } catch { /* the order itself is saved */ }
+      clear(d, 'order bana', { newOrderId: row?.id || '', newOrderNo: orderNo }).catch(() => show(L(`${orderNo} created ✓ — but the doubt card did not close. Do NOT tap "Make order" again.`, `${orderNo} ban gaya ✓ — par doubt card band nahi hua. "Order banao" DOBARA NA dabayein.`), 7000))
     } catch {
       show(L('NOT saved — try again', 'Save NAHI hua — dobara try karein'), 3000)
     } finally { setBusy(false) }
@@ -133,7 +137,7 @@ export default function Doubts({ owner = false, role = '' }) {
                 {linked && <div className="text-xs text-slate-500">{L('In this order now:', 'Is order me abhi:')} {(linked.items || []).map(it => `${it.product} ${it.qty}`).join(' · ')}{linked.status === 'cancelled' ? L(' — ORDER IS CANCELLED', ' — ORDER CANCEL HAI') : ''}</div>}
                 {rows.map((r, i) => (
                   <div key={i} className="flex gap-1.5 items-center">
-                    <div className="flex-1 min-w-0"><Suggest className={inputCls} placeholder="Item" value={r.product} onChange={v => setRow(i, { product: v })} onPick={p => setRow(i, { product: p.name, unit: p.unit || r.unit || 'Nos' })} options={products.list} /></div>
+                    <div className="flex-1 min-w-0"><Suggest className={inputCls} placeholder="Item" value={r.product} onChange={v => setRow(i, { product: v })} onPick={p => setRow(i, { product: p.name, unit: p.unit || 'Nos' })} options={products.list} /></div>
                     <div className="w-24 flex-shrink-0"><NumberInput inputMode="decimal" className="text-center !px-2 !py-2.5 !text-sm" placeholder="Qty" value={r.qty} onChange={e => setRow(i, { qty: e.target.value })} /></div>
                   </div>
                 ))}
