@@ -42,7 +42,15 @@ function Console({ module, role, email, onSignOut }) {
       {activePage ? (
         <>
           <NavBar title={activePage.title} onHome={() => setActiveKey(null)} />
-          <activePage.Component owner={owner} role={role} />
+          <div className="pb-24"><activePage.Component owner={owner} role={role} /></div>
+          {/* one-tap switch between the daily screens (no trip through Home) */}
+          <div className="fixed bottom-0 inset-x-0 bg-white border-t border-slate-200 flex no-print" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+            {pages.filter((p) => ['newOrder', 'orders', 'doubts'].includes(p.key)).map((p) => (
+              <button key={p.key} onClick={() => setActiveKey(p.key)} className={`flex-1 py-3 text-xs font-bold ${p.key === activeKey ? 'text-blue-600' : 'text-slate-500'}`}>
+                <div className="text-lg leading-none mb-0.5">{p.icon}</div>{p.title}
+              </button>
+            ))}
+          </div>
         </>
       ) : (
         <ModuleHome module={view} onOpen={setActiveKey} owner={owner} />

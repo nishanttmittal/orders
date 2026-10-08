@@ -4,6 +4,10 @@
  */
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { setDoc, deleteDoc, writeBatch, runTransaction } from 'firebase/firestore'
+
+// Wait for a cloud write for a few seconds. 'cloud' = the server has it. 'local' = no answer yet (weak / no
+// network): the write is stored on this phone and syncs by itself. A rejected write throws.
+const settle = (p, ms = 5000) => Promise.race([p.then(() => 'cloud'), new Promise((resolve) => setTimeout(() => resolve('local'), ms))])
 import { onSnapshot, getDocs } from '../../core/db/readmeter'   // metered reads → usage_reads (quota diagnosis)
 import { db, paths, ensureSignedIn, watchAuth } from '../../core/db/firebase'
 import { makeNormalizer } from '../../core/schema/field'
@@ -30,6 +34,19 @@ function useCloudCollection(collPath, docPath, normalize, authKey) {
   return {
     list,
     insert: (rec) => { const id = rec.id || makeId('r'); const row = { createdAt: new Date().toISOString(), ...rec, id }; setDoc(docPath(id), row); return row },
+    // Same as insert, but tells the truth about the result: resolves { row, where: 'cloud' | 'local' }, or throws
+    // if the write was refused. Screens must not say "saved" before this resolves.
+    insertSafe: async (rec) => { const id = rec.id || makeId('r'); const row = { createdAt: new Date().toISOString(), ...rec, id }; const where = await settle(setDoc(docPath(id), row)); return { row, where } },
+    updateSafe: async (id, patch) => settle(setDoc(docPath(id), patch, { merge: true })),
+    // Read-modify-write on ONE doc inside a transaction, so two phones can never overwrite each other. `fn` gets
+    // the latest record and returns the patch (or throws a message to stop). Needs the network.
+    change: (id, fn) => runTransaction(db, async (tx) => {
+      const snap = await tx.get(docPath(id))
+      if (!snap.exists()) throw new Error('Record nahi mila')
+      const patch = fn(normalize({ id: snap.id, ...snap.data() }))
+      tx.set(docPath(id), patch, { merge: true })
+      return patch
+    }),
     update: (id, patch) => setDoc(docPath(id), patch, { merge: true }),
     remove: (id) => deleteDoc(docPath(id)),
     replaceAll: async (rows) => {
@@ -79,24 +96,21 @@ export function FirestoreProvider({ children }) {
   }, [])
 
   // Order numbers come from one counter shared with the laptop job (which creates orders approved on WhatsApp),
-  // allocated in a transaction so two writers can never get the same number. Offline or slow (4 s): fall back to
-  // the old local max+1 — the order still saves, and the list flags a duplicate label if one ever happens.
+  // allocated in a transaction so two writers can never get the same number. No network = no number: the screen
+  // keeps what was typed and asks to save again. (A number is never invented on the phone: that gave duplicates.)
   const ordersRef = useRef([])
   useEffect(() => { ordersRef.current = orders.list }, [orders.list])
   const allocOrderNo = useCallback(async () => {
-    const local = () => nextOrderNo(ordersRef.current)
-    try {
-      const viaCounter = runTransaction(db, async (tx) => {
-        const ref = paths.meta('counter')
-        const snap = await tx.get(ref)
-        const localNext = Number(/(\d+)\s*$/.exec(local())?.[1] || 1)
-        const n = Math.max(snap.exists() ? Number(snap.data().next) || 1 : 1, localNext)
-        tx.set(ref, { next: n + 1, updatedAt: new Date().toISOString() }, { merge: true })
-        return padOrderNo(n)
-      })
-      const timeout = new Promise((resolve) => setTimeout(() => resolve(null), 4000))
-      return (await Promise.race([viaCounter, timeout])) || local()
-    } catch { return local() }
+    const localNext = Number(/(\d+)\s*$/.exec(nextOrderNo(ordersRef.current))?.[1] || 1)
+    const viaCounter = runTransaction(db, async (tx) => {
+      const ref = paths.meta('counter')
+      const snap = await tx.get(ref)
+      const n = Math.max(snap.exists() ? Number(snap.data().next) || 1 : 1, localNext)
+      tx.set(ref, { next: n + 1, updatedAt: new Date().toISOString() }, { merge: true })
+      return padOrderNo(n)
+    })
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000))
+    return Promise.race([viaCounter, timeout])
   }, [])
 
   const seededRef = useRef(false)

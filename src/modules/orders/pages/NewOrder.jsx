@@ -40,30 +40,33 @@ export default function NewOrder({ owner = false, role = '' }) {
     if (busyRef.current) return   // block a rapid double-tap from creating two orders
     const cn = clientName.trim()
     if (!cn) return show('Customer ka naam likhein', 2000)
-    const cleanItems = items
-      .filter(it => it.product.trim() && Number(it.qty) > 0)
-      .map(it => ({ product: it.product.trim(), finish: '', qty: Number(it.qty), unit: it.unit || 'Nos', dispatched: 0 }))
+    // A row with an item but no quantity (or the other way round) is a mistake, never something to drop quietly.
+    const used = items.filter(it => it.product.trim() || String(it.qty).trim())
+    if (used.some(it => !it.product.trim() || !(Number(it.qty) > 0))) return show('Har line me item aur quantity dono likhein', 2500)
+    const cleanItems = used.map(it => ({ product: it.product.trim(), finish: '', qty: Number(it.qty), unit: it.unit || 'Nos', dispatched: 0 }))
     if (cleanItems.length === 0) return show('Item aur quantity likhein', 2500)
     busyRef.current = true
     setSaving(true)
     try {
-      const orderNo = await allocOrderNo()
-      orders.insert({
+      let orderNo
+      try { orderNo = await allocOrderNo() } catch { show('Internet nahi mila — order number nahi bana. Net dekh kar dobara Save dabayein (likha hua yahin hai).', 4500); return }
+      const { where } = await orders.insertSafe({
         orderNo, orderDate: todayStr(), clientName: cn, deliveryDate, items: cleanItems,
         transport: '', remarks: remarks.trim(), status: 'pending',
         price: owner ? Number(price) || 0 : 0, advance: owner ? Number(advance) || 0 : 0,
         createdBy: owner ? 'owner' : role || 'manager', createdByEmail: (auth?.currentUser?.email || '').toLowerCase(), source: 'app',
         mirror: { status: toGroup && trusted ? 'pending' : 'none' },
       })
+      // only now is the order really stored (in the cloud, or on this phone waiting for the network)
       if (!clients.list.some(c => c.name.toLowerCase() === cn.toLowerCase())) clients.insert({ name: cn })
       for (const it of trusted ? cleanItems : []) {
         if (!products.list.some(p => (p.name || '').toLowerCase() === it.product.toLowerCase())) products.insert({ name: it.product, order: 999 })
       }
       log('ORDER', `${orderNo} · ${cn} · ${cleanItems.length} item(s)`, owner ? 'owner' : 'manager')
-      show(toGroup && trusted ? `${orderNo} save ✓ — order list me jayega` : `${orderNo} save ✓`, 2500)
+      show(where === 'cloud' ? (toGroup && trusted ? `${orderNo} save ✓ — order list me jayega` : `${orderNo} save ✓`) : `${orderNo} phone me save — net aate hi upar jayega`, 3000)
       setClientName(''); setItems([blank()]); setDeliveryDate(''); setRemarks(''); setPrice(''); setAdvance(''); setToGroup(true)
     } catch {
-      show('Save nahi hua, dobara try karein', 2500)
+      show('Save NAHI hua — dobara Save dabayein (likha hua yahin hai)', 4000)
     } finally {
       setTimeout(() => { busyRef.current = false; setSaving(false) }, 700)   // re-enable even if it threw
     }

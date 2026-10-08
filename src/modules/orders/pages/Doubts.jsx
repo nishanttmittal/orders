@@ -1,7 +1,7 @@
 /**
  * Doubt — orders that are not clear yet, for the owner and the manager to settle. Two kinds:
  *   • linked to an order already in the book (e.g. "Synchro — quantity nahi likhi"): type the item + quantity and
- *     tap "Order me jodo", or "Kuch nahi" if nothing is to be added.
+ *     tap "UO-00xx me jodo" (the staff group gets an ADD line), or "Jodna nahi hai" if nothing is to be added.
  *   • a possible new order (from the paper list or the nightly WhatsApp scan): fix the lines and tap
  *     "Order banao" (it is saved like any new order), or "Order nahi hai".
  * Clearing never deletes anything: the doubt is kept with who cleared it and how.
@@ -11,6 +11,7 @@ import { Button, Card, NumberInput, useToast, Toast } from '../../../core/ui'
 import { todayStr, fmtDate } from '../../../core/utils/format'
 import { useOrders } from '../OrdersContext'
 import { auth } from '../../../core/db/firebase'
+import { groupLine } from '../logic/orders'
 
 const inputCls = 'w-full border-2 border-slate-300 rounded-xl px-3 py-2.5 text-sm font-semibold focus:outline-none focus:ring-4 focus:ring-blue-200 focus:border-blue-500'
 const SRC = { kagaz: 'Kagaz list', whatsapp: 'WhatsApp' }
@@ -37,43 +38,66 @@ export default function Doubts({ owner = false, role = '' }) {
     setRows(start.length ? start : [{ product: '', qty: '', unit: 'Nos' }])
   }
   const setRow = (i, patch) => setRows(rows.map((r, idx) => idx === i ? { ...r, ...patch } : r))
-  const cleanRows = () => rows.filter(r => r.product.trim() && Number(r.qty) > 0).map(r => ({ product: r.product.trim(), finish: '', qty: Number(r.qty), unit: r.unit || 'Nos', dispatched: 0 }))
-  const clear = (d, outcome, extra = {}) => {
-    doubts.update(d.id, { status: 'cleared', outcome, clearedAt: new Date().toISOString(), clearedBy: by, clearedByEmail: email, ...extra })
+  // null = some row is half filled (item without quantity or the other way round): never dropped quietly
+  const cleanRows = () => {
+    const used = rows.filter(r => r.product.trim() || String(r.qty).trim())
+    if (used.some(r => !r.product.trim() || !(Number(r.qty) > 0))) return null
+    return used.map(r => ({ product: r.product.trim(), finish: '', qty: Number(r.qty), unit: r.unit || 'Nos', dispatched: 0 }))
+  }
+  const clear = async (d, outcome, extra = {}) => {
+    await doubts.update(d.id, { status: 'cleared', outcome, clearedAt: new Date().toISOString(), clearedBy: by, clearedByEmail: email, ...extra })
     log('DOUBT_CLEAR', `${d.customer} · ${outcome}`, by, d.id)
     setOpenId(null)
   }
 
-  // Add the typed lines to the order this doubt belongs to.
-  const addToOrder = (d) => {
+  // Add the typed lines to the order this doubt belongs to — in a transaction on the latest copy of the order,
+  // and with a note for the staff group ("ADD · UO-0027 …") so production hears about the extra line too.
+  const addToOrder = async (d) => {
+    if (busy) return
     const o = orders.list.find(x => x.id === d.orderId)
     if (!o) return show('Order nahi mila', 2000)
+    if (o.status === 'cancelled') return show('Ye order cancel hai — naya order banana ho to New Order se banayein', 3500)
     const add = cleanRows()
+    if (add === null) return show('Har line me item aur quantity dono likhein', 2500)
     if (!add.length) return show('Item aur quantity likhein', 2000)
-    orders.update(o.id, { items: [...(o.items || []), ...add], status: o.status === 'dispatched' ? 'pending' : o.status })
-    log('ORDER_ADD_LINE', `${o.orderNo} · ${o.clientName} · ${add.map(a => `${a.product} ${a.qty}`).join(', ')}`, by, o.id)
-    clear(d, 'order me joda', { addedLines: add })
-    show(`${o.orderNo} me jod diya ✓`)
+    setBusy(true)
+    try {
+      await orders.change(o.id, (latest) => {
+        if (latest.status === 'cancelled') throw new Error('cancelled')
+        return {
+          items: [...(latest.items || []), ...add], status: latest.status === 'dispatched' ? 'pending' : latest.status,
+          groupNotes: [...(latest.groupNotes || []), { id: `n${Date.now()}`, kind: 'ADD', lines: add.map(groupLine), status: 'pending', at: new Date().toISOString(), by: email }],
+          notePending: true,
+        }
+      })
+      log('ORDER_ADD_LINE', `${o.orderNo} · ${o.clientName} · ${add.map(a => `${a.product} ${a.qty}`).join(', ')}`, by, o.id)
+      await clear(d, 'order me joda', { addedLines: add })   // the card is cleared only after the order really changed
+      show(`${o.orderNo} me jod diya ✓ — order list me bhi jayega`, 3000)
+    } catch (e) {
+      show(e?.message === 'cancelled' ? 'Ye order cancel hai' : 'Jod NAHI paya — internet dekh kar dobara karein', 3500)
+    } finally { setBusy(false) }
   }
   // Make a new order from the typed lines (saved exactly like New Order, so its line goes to the order group).
   const makeOrder = async (d) => {
     if (busy) return
     const items = cleanRows()
+    if (items === null) return show('Har line me item aur quantity dono likhein', 2500)
     if (!items.length) return show('Item aur quantity likhein', 2000)
     setBusy(true)
     try {
-      const orderNo = await allocOrderNo()
+      let orderNo
+      try { orderNo = await allocOrderNo() } catch { show('Internet nahi mila — order number nahi bana. Dobara dabayein.', 4000); return }
       const cn = (d.customer || '').trim()
-      const row = orders.insert({
+      const { row } = await orders.insertSafe({
         orderNo, orderDate: todayStr(), clientName: cn, deliveryDate: '', items, transport: '', remarks: `Doubt se bana${d.source ? ' (' + (SRC[d.source] || d.source) + ')' : ''}`,
         status: 'pending', price: 0, advance: 0, createdBy: by, createdByEmail: email, source: 'app', mirror: { status: 'pending' },
       })
       if (cn && !clients.list.some(c => (c.name || '').toLowerCase() === cn.toLowerCase())) clients.insert({ name: cn })
       log('ORDER', `${orderNo} · ${cn} · doubt se`, by)
-      clear(d, 'order bana', { newOrderId: row?.id || '', newOrderNo: orderNo })
+      await clear(d, 'order bana', { newOrderId: row?.id || '', newOrderNo: orderNo })
       show(`${orderNo} ban gaya ✓ — order list me jayega`, 2500)
     } catch {
-      show('Save nahi hua, dobara try karein', 2500)
+      show('Save NAHI hua — dobara try karein', 3000)
     } finally { setBusy(false) }
   }
 
@@ -98,11 +122,12 @@ export default function Doubts({ owner = false, role = '' }) {
                 <span className="text-[11px] font-bold px-2 py-1 rounded-lg bg-slate-100 text-slate-500 flex-shrink-0">{SRC[d.source] || d.source || ''}</span>
               </div>
               <div className="text-sm text-slate-700 mt-1">{d.question}</div>
-              {d.status === 'cleared' && <div className="text-xs text-emerald-700 font-semibold mt-1">✓ {d.outcome}{d.newOrderNo ? ` ${d.newOrderNo}` : ''} · {d.clearedBy}{d.clearedAt ? ` · ${fmtDate(d.clearedAt)}` : ''}</div>}
+              {d.status === 'cleared' && <div className="text-xs text-emerald-700 font-semibold mt-1">✓ {d.outcome}{d.newOrderNo ? ` ${d.newOrderNo}` : ''} · {d.clearedBy}{d.clearedAt ? ` · ${fmtDate(String(d.clearedAt).slice(0, 10))}` : ''}</div>}
             </div>
 
             {isOpen && d.status !== 'cleared' && (
               <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
+                {linked && <div className="text-xs text-slate-500">Is order me abhi: {(linked.items || []).map(it => `${it.product} ${it.qty}`).join(' · ')}{linked.status === 'cancelled' ? ' — ORDER CANCEL HAI' : ''}</div>}
                 {rows.map((r, i) => (
                   <div key={i} className="flex gap-1.5 items-center">
                     <div className="flex-1 min-w-0"><input list="dbt-products" className={inputCls} placeholder="Item" value={r.product} onChange={e => setRow(i, { product: e.target.value })} autoComplete="off" /></div>
@@ -113,9 +138,9 @@ export default function Doubts({ owner = false, role = '' }) {
                 <button onClick={() => setRows([...rows, { product: '', qty: '', unit: 'Nos' }])} className="text-xs font-bold text-slate-500">+ Aur item</button>
                 <div className="grid grid-cols-2 gap-2 pt-1">
                   {linked
-                    ? <Button variant="primary" onClick={() => addToOrder(d)}>Order me jodo</Button>
+                    ? <Button variant="primary" disabled={busy || linked.status === 'cancelled'} onClick={() => addToOrder(d)}>{linked.orderNo} me jodo</Button>
                     : <Button variant="primary" disabled={busy} onClick={() => makeOrder(d)}>Order banao</Button>}
-                  <Button variant="neutral" onClick={() => clear(d, linked ? 'kuch nahi jodna' : 'order nahi hai')}>{linked ? 'Kuch nahi' : 'Order nahi hai'}</Button>
+                  <Button variant="neutral" onClick={() => clear(d, linked ? 'kuch nahi jodna' : 'order nahi hai')}>{linked ? 'Jodna nahi hai' : 'Order nahi hai'}</Button>
                 </div>
               </div>
             )}

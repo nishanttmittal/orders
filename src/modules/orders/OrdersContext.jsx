@@ -19,7 +19,12 @@ export function OrdersProvider({ children }) {
 }
 
 export function LocalOrdersProvider({ children }) {
-  const orders   = useCollection(ordersRepo)
+  const base     = useCollection(ordersRepo)
+  const orders   = { ...base,
+    insertSafe: async (rec) => ({ row: base.insert(rec), where: 'cloud' }),
+    updateSafe: async (id, patch) => { base.update(id, patch); return 'cloud' },
+    change: async (id, fn) => { const cur = base.list.find((o) => o.id === id); if (!cur) throw new Error('Record nahi mila'); const patch = fn(cur); base.update(id, patch); return patch },
+  }
   const clients  = useCollection(clientsRepo)
   const products = useCollection(productsRepo)
   const logs     = useCollection(logsRepo)
