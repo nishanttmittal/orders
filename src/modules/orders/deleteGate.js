@@ -9,7 +9,7 @@
  */
 import { tr } from './i18n'
 
-const DELETE_HASH = '5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8'
+const DELETE_HASH = 'c8356fe4fc3ed0554e721b8f8348d658696d8a1b1ea657dddbe70164d6a4fa61'
 
 async function sha256(text) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
