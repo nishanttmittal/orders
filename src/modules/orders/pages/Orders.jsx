@@ -11,6 +11,7 @@ import { balance, daysToDue, isOverdue, isOpen, lineSent, lineBalance, lineUnit,
 import { duplicateOrderNos } from '../orderNo'
 import { auth } from '../../../core/db/firebase'
 import Suggest from '../Suggest'
+import { askDeletePassword } from '../deleteGate'
 
 // What happened to this order's line in the staff order group. `retry` = offer the "Ab bhejo" button.
 const MIRROR = {
@@ -116,8 +117,9 @@ export default function Orders({ owner = false, role = '' }) {
     show('Dobara bheja ja raha hai')
   }
   // Cancel (not hard delete): keep the record + number permanently, mark cancelled.
-  const cancelOrder = (o) => {
+  const cancelOrder = async (o) => {
     if (o.status === 'cancelled') return
+    if (!(await askDeletePassword(`Order ${o.orderNo} (${o.clientName}) cancel karna hai?`))) return
     const reason = prompt(`Cancel order ${o.orderNo} (${o.clientName})?\nOrder rakha jayega, number dobara use nahi hoga. Reason (optional):`)
     if (reason === null) return
     orders.update(o.id, { status: 'cancelled', cancelledAt: new Date().toISOString(), cancelledBy: 'owner', cancelReason: (reason || '').trim() })
